@@ -7,8 +7,15 @@ from tqdm import tqdm
 import json
 import argparse
 from tqdm import tqdm
-from utils import PROMPT_DICT, TASK_INST, load_jsonlines, control_tokens, load_special_tokens
-from metrics import match, accuracy
+from utils import (
+    PROMPT_DICT,
+    TASK_INST,
+    load_jsonlines,
+    control_tokens,
+    load_special_tokens,
+)
+from metrics import match, accuracy, accuracy_TrueFalse_lenient
+
 
 def preprocess_input_data(dataset, task=None):
     new_data = []
@@ -37,27 +44,38 @@ def preprocess_input_data(dataset, task=None):
             if "D" not in answer_labels:
                 answer_labels["D"] = ""
             choices = "\nA: {0}\nB: {1}\nC: {2}\nD: {3}".format(
-                answer_labels["A"], answer_labels["B"], answer_labels["C"], answer_labels["D"])
+                answer_labels["A"],
+                answer_labels["B"],
+                answer_labels["C"],
+                answer_labels["D"],
+            )
             if "E" in answer_labels:
                 choices += "\nE: {}".format(answer_labels["E"])
-            item["instruction"] = instruction + \
-                "\n\n### Input:\n" + item["question"] + choices
+            item["instruction"] = (
+                instruction + "\n\n### Input:\n" + item["question"] + choices
+            )
             item["answers"] = [item["answerKey"]]
         else:
-            prompt = instruction + "\n\n## Input:\n\n" + \
-                item["question"] if instruction is not None else item["question"]
+            prompt = (
+                instruction + "\n\n## Input:\n\n" + item["question"]
+                if instruction is not None
+                else item["question"]
+            )
             item["instruction"] = prompt
         new_data.append(item)
 
     return new_data
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--eval_file', type=str, default=None)
-    parser.add_argument('--input_file', type=str)
-    parser.add_argument('--task', type=str)
+    parser.add_argument("--eval_file", type=str, default=None)
+    parser.add_argument("--input_file", type=str)
+    parser.add_argument("--task", type=str)
     # Decoding hyperparams
-    parser.add_argument('--metric', type=str, help="metric to be used during evaluation")
+    parser.add_argument(
+        "--metric", type=str, help="metric to be used during evaluation"
+    )
     args = parser.parse_args()
 
     input_path = args.input_file
@@ -66,30 +84,34 @@ def main():
     else:
         input_data = load_jsonlines(input_path)
 
-    input_data = preprocess_input_data(
-        input_data, task=args.task)
+    input_data = preprocess_input_data(input_data, task=args.task)
     eval_file = args.eval_file
-    with open(eval_file, 'r') as f:
-        resps = [l.strip()[:] for l in f.readlines()]    
+    with open(eval_file, "r") as f:
+        resps = [l.strip()[:] for l in f.readlines()]
     preds = []
     prompts = []
     golds = []
     metric_results = []
+    alt_metric_results = []
     scores = []
     all_results = []
     count = 0
     for i, (pred, row) in tqdm(enumerate(zip(resps[:], input_data[:]))):
         pred = pred.strip()
-        prompts.append(None)
+        
         preds.append(pred)
         all_results.append(None)
         if "answers" not in row and "answer" in row:
-            row["answers"] = [row["answer"]] if type(
-                row["answer"]) is str else row["answer"]
+            row["answers"] = (
+                [row["answer"]] if type(row["answer"]) is str else row["answer"]
+            )
         if args.metric == "accuracy":
             metric_result = accuracy(pred, row["output"])
-
+            lenient_metric_result = accuracy_TrueFalse_lenient([pred], [row["output"]])
+            prompts.append(row["output"])
+            alt_metric_results.append(lenient_metric_result)
         elif args.metric == "match":
+            prompts.append(None)
             if "SUPPORTS" in pred:
                 pred = "true"
             elif "REFUTES" in pred:
@@ -100,14 +122,32 @@ def main():
 
         metric_results.append(metric_result)
         if count % 10 == 0:
-            final_results = {"preds": preds, "prompts": prompts, "metric_results": metric_results, "all_results": all_results,
-                             "golds": golds,  "metric":  args.metric, "metric_mean": np.mean(metric_results), "scores": scores}
+            final_results = {
+                "preds": preds,
+                "prompts": prompts,
+                "metric_results": metric_results,
+                "all_results": all_results,
+                "golds": golds,
+                "metric": args.metric,
+                "metric_mean": np.mean(metric_results),
+                "scores": scores,
+            }
         count += 1
 
-    final_results = {"preds": preds, "prompts": prompts, "metric_results": metric_results, "all_results": all_results,
-                     "golds": golds,  "metric":  args.metric, "metric_mean": np.mean(metric_results), "scores": scores}
-
-    print("Final result: {0}".format(np.mean(metric_results)))
+    final_results = {
+        "preds": preds,
+        "prompts": prompts,
+        "metric_results": metric_results,
+        "all_results": all_results,
+        "golds": golds,
+        "metric": args.metric,
+        "metric_mean": np.mean(metric_results),
+        "scores": scores,
+    }
+    #print(json.dumps(final_results, indent=4),"\n")
+    print("Final EXACT accuracy result: {0}".format(np.mean(metric_results)))
+    if args.metric == "accuracy":
+        print("Lenient Accuracy result: {0}".format(np.mean(alt_metric_results)))
 
 if __name__ == "__main__":
     main()
