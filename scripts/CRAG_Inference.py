@@ -1,4 +1,3 @@
-
 import argparse
 import logging
 
@@ -195,6 +194,21 @@ def process_flag(scores, n_docs, threshold1, threshold2):
             tmp_flag = []
     return identification_flag
 
+
+# ADDED BY Ivan
+
+def is_popqa_alike(queries, paragraphs):
+    # Check a sample of the data
+    sample_q = queries[:5]
+    avg_len = sum(len(q.split()) for q in sample_q) / len(sample_q)
+    
+    # Heuristic: PopQA questions are typically short factual queries
+    # and the documents are usually much longer biographies.
+    if avg_len < 15:
+        return True
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--generator_path', type=str)
@@ -223,8 +237,8 @@ def main():
     generator = LLM(model=args.generator_path, dtype="half")
     sampling_params = SamplingParams(temperature=0.0, top_p=1.0, max_tokens=100, skip_special_tokens=False)
     
-    tokenizer = T5Tokenizer.from_pretrained(args.evaluator_path)
-    model = T5ForSequenceClassification.from_pretrained(args.evaluator_path, num_labels=1)
+    tokenizer = T5Tokenizer.from_pretrained(args.evaluator_path, legacy=False)
+    model = T5ForSequenceClassification.from_pretrained(args.evaluator_path, num_labels=1, torch_dtype=torch.float16)
     device = torch.device(args.device) if torch.cuda.is_available() else torch.device("cpu")
     model.to(device)
 
@@ -261,10 +275,25 @@ def main():
     preds = []
     modelname = "selfrag_llama" if "selfrag" in args.generator_path else "llama"
     if args.method != 'no_retrieval':
+        """
         for i, (q, p) in tqdm(enumerate(zip(queries, paragraphs))):
             prompt = format_prompt(i, args.task, q, p, modelname)
             pred = generator.generate([prompt], sampling_params)
             preds.append(postprocess_answer_option_conditioned(pred[0].outputs[0].text))
+        """
+        all_prompts = []
+        for i, (q, p) in enumerate(zip(queries, paragraphs)):
+            prompt = format_prompt(i, args.task, q, p, modelname)
+            all_prompts.append(prompt)
+
+        # Pass the ENTIRE list to vLLM. It will batch them internally!
+        print(f"Generating {len(all_prompts)} responses...")
+        outputs = generator.generate(all_prompts, sampling_params)
+
+        # Collect results
+        for output in outputs:
+            generated_text = output.outputs[0].text
+            preds.append(postprocess_answer_option_conditioned(generated_text))
     else:
         for i, q in tqdm(enumerate(queries)):
             p = None
