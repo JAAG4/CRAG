@@ -7,8 +7,9 @@ import numpy as np
 import random
 from tqdm import tqdm
 
-from transformers import T5ForSequenceClassification
-from transformers import T5Tokenizer
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+
 
 import torch
 import torch.nn as nn
@@ -51,16 +52,19 @@ def main():
     torch.manual_seed(SEED)
     torch.cuda.manual_seed_all(SEED) 
 
-    tokenizer = T5Tokenizer.from_pretrained("t5-large")
-    model = T5ForSequenceClassification.from_pretrained("t5-large", num_labels=1)
+    model_name = "NeuML/pubmedbert-base-embeddings"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    # Configurar para 3 etiquetas (Entailment: Correcto, Contradiction: Incorrecto, Neutral: Ambiguo)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=3)
     train_data, train_label = data_preprocess(train_file, tokenizer)
 
     # config
-    batch_size = 12
+    batch_size = args.batch_size
     train = TensorDataset(train_data["input_ids"], train_data["attention_mask"], torch.tensor(train_label))
     train_dataloader = DataLoader(train, batch_size=batch_size, shuffle=True, sampler=None)
     optimizer = AdamW(model.parameters(), lr=1e-4)
-    num_epochs = 8
+    num_epochs = args.num_epochs
     num_training_steps = num_epochs * len(train_dataloader)
     print(num_training_steps)
     lr_scheduler = get_scheduler(
@@ -96,4 +100,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
