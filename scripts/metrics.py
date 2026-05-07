@@ -24,6 +24,20 @@ def accuracy(preds, labels):
 
     return 100 * (match_count / len(preds))
 
+def accuracy_TrueFalse_lenient(preds, labels):
+    match_count = 0
+    for pred, label in zip(preds, labels):
+        target = label[0]
+        #print("Target: {} || Prediction: {}".format(target, pred))
+        #print("T:{} F:{}".format("Answer: True." in pred, "Answer: False." in pred))
+        if "false" in target.lower():
+            if "answer: false." in pred.lower():
+                match_count += 1
+        elif "true" in target.lower():
+            if "answer: true." in pred.lower():
+                match_count += 1
+    return 100 * (match_count / len(preds))
+
 
 def f1(decoded_preds, decoded_labels):
     f1_all = []
