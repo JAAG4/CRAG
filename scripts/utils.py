@@ -332,7 +332,7 @@ def select_relevants(
 
     if use_reranker and reranker is not None:
         try:
-            #print("\tTrying Rerank")
+            # print("\tTrying Rerank")
             rerank_topk = reranker_topk if reranker_topk is not None else len(strips)
             reranked = reranker.rerank(query, strips, top_k=rerank_topk)
             strips = [x[1] for x in reranked]
@@ -358,7 +358,10 @@ def select_relevants(
                         attention_mask=inputs["attention_mask"].to(device),
                     )
                 scores = float(outputs["logits"].cpu())
-            except:
+            except Exception as e:
+                print(
+                    f"\t\t[select_relevants] WARNING failed to compute score for strip {i}: {e}"
+                )
                 scores = -1.0
         strips_data.append((scores, p, i))
 
