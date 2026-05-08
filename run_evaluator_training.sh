@@ -1,12 +1,12 @@
 cd scripts
-batch_size=BATCH_SIZE
-num_epochs=N_EPOCH
-seed=SEED
+batch_size=1
+num_epochs=1
+seed=1
 
-save_path="../models/my_evaluator"
-mkdir -p ../models/my_evaluator
+save_path="../models/my_evaluatorPubH"
+mkdir -p ../models/my_evaluatorPubH
 
 python train_evaluator.py \
---train_file ../data/popqa/train_popqa.txt \
---save_path YOUR_EVALUATOR_PATH --batch_size $batch_size \
+--train_file ../data/pubqa_train.txt \
+--save_path $save_path --batch_size $batch_size \
 --num_epochs $num_epochs --seed $seed
