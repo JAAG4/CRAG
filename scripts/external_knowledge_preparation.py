@@ -6,7 +6,6 @@ from utils import extract_keywords, select_relevants
 import phoenix as px
 from phoenix.tracing import SpanKind
 import requests
-from bs4 import BeautifulSoup
 
 from transformers import T5ForSequenceClassification, T5Tokenizer
 

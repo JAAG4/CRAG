@@ -1,6 +1,5 @@
 import argparse
 from tqdm import tqdm
-from bs4 import BeautifulSoup
 import torch
 import torch.nn as nn
 from transformers import T5ForSequenceClassification, T5Tokenizer

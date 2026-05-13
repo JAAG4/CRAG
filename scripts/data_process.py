@@ -2,7 +2,6 @@ import argparse
 from utils import load_file
 import json
 import phoenix as px
-from phoenix.tracing import SpanKind
 
 INPUT_FILES = {
     "popqa": "../retrieval_lm/eval_data/popqa_longtail_w_gs.jsonl",
