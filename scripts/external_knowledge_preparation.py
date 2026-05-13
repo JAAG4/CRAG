@@ -197,9 +197,14 @@ def main():
         search_queries = generate_knowledge_q(
             questions, args.task, args.openai_key, args.mode
         )
-        span.set_attributes({"task": args.task, "mode": args.mode})
-        span.set_input({"queries": questions})
-        span.set_output(search_queries)
+        span.set_attributes(
+            {
+                "task": args.task,
+                "mode": args.mode,
+                "queries": questions,
+                "output": search_queries,
+            }
+        )
 
     with tracer.start_as_current_span(
         name="search",
@@ -207,8 +212,7 @@ def main():
         attributes={"task": args.task},
     ) as span:
         search_results = Search(search_queries, args.search_path, args.search_key)
-        span.set_input({"queries": search_queries})
-        span.set_output(search_results)
+
         results = visit_pages(
             questions,
             search_results,
@@ -217,8 +221,13 @@ def main():
             args.device,
             args.mode,
         )
-        span.set_input({"search_results": search_results})
-        span.set_output(results)
+        span.set_atrtibutes(
+            {
+                "num_results": len(search_results),
+                "queries": search_queries,
+                "results": search_results,
+            }
+        )
 
 
 if __name__ == "__main__":

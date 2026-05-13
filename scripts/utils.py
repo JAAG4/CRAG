@@ -297,7 +297,9 @@ def extract_keywords(questions, task, openai_key):
     queries = []
     prompt_template = TASK_PROMPT[task]
     for question in tqdm(questions[:]):
-        with using_prompt_template(prompt_template, variables={"question": question}):
+        with using_prompt_template(
+            template=prompt_template, variables={"question": question}
+        ):
             inputs = prompt_template.format(question=question)
             messages = [
                 {"role": "user", "content": inputs},

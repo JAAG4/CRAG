@@ -118,7 +118,7 @@ def main():
             passages = [p.strip().split("[sep]") for p in psg_f.readlines()]
             queries = [q.strip() for q in query_f.readlines()]
 
-            span.set_input(
+            span.set_attributes(
                 {"retrieval": args.input_retrieval, "queries": args.input_queries}
             )
     with using_metadata(
