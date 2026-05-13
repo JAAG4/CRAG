@@ -13,6 +13,7 @@ from transformers import T5ForSequenceClassification, T5Tokenizer
 import sys
 
 
+@tracer.chain
 def generate_knowledge_q(questions, task, openai_key, mode):
     if task == "bio":
         queries = [q[7:-1] for q in questions]
@@ -25,6 +26,7 @@ def generate_knowledge_q(questions, task, openai_key, mode):
     return search_queries
 
 
+@tracer.tool
 def Search(queries, search_path, search_key):
     url = "https://google.serper.dev/search"
     responses = []
@@ -58,6 +60,7 @@ def Search(queries, search_path, search_key):
     return search_results
 
 
+@tracer.tool
 def test_page_loader(url):
     import requests
     from bs4 import BeautifulSoup
@@ -94,6 +97,7 @@ def test_page_loader(url):
     return paras
 
 
+@tracer.tool
 def visit_pages(questions, web_results, output_file, model_name, device, mode):
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     model = T5ForSequenceClassification.from_pretrained(

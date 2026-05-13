@@ -13,17 +13,11 @@ import torch.nn as nn
 # Phoenix OpenAI tracing
 
 from openinference.instrumentation.openai import OpenAIInstrumentor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk import trace as trace_sdk
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from phoenix.otel import using_prompt_template
 
-endpoint = "http://127.0.0.1:6006/v1/traces"
-tracer_provider = trace_sdk.TracerProvider()
-tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(endpoint)))
-# Optionally, you can also print the spans to the console.
-tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+from tracing_phx import tracer
 
-OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+OpenAIInstrumentor().instrument(tracer_provider=tracer)
 
 PROMPT_DICT = {
     "prompt_input": (
@@ -87,6 +81,7 @@ control_tokens = [
 ]
 
 
+@tracer.chain
 def load_special_tokens(tokenizer, use_grounding=False, use_utility=False):
     ret_tokens = {
         token: tokenizer.convert_tokens_to_ids(token)
@@ -117,6 +112,7 @@ def fix_spacing(input_text):
     return output_text
 
 
+@tracer.tool
 def postprocess(pred):
     special_tokens = [
         "[Fully supported]",
@@ -164,6 +160,7 @@ def save_file_jsonl(data, fp):
         writer.write_all(data)
 
 
+@tracer.tool
 def preprocess_input(input_data, task):
     if task == "factscore":
         for item in input_data:
@@ -191,6 +188,7 @@ def preprocess_input(input_data, task):
         return processed_input_data
 
 
+@tracer.tool
 def postprocess_output(input_instance, prediction, task, intermediate_results=None):
     if task == "factscore":
         return {
@@ -230,6 +228,7 @@ def postprocess_output(input_instance, prediction, task, intermediate_results=No
         return input_instance
 
 
+@tracer.tool
 def process_arc_instruction(item, instruction):
     choices = item["choices"]
     answer_labels = {}
@@ -260,6 +259,7 @@ def process_arc_instruction(item, instruction):
     return processed_instruction
 
 
+@tracer.tool
 def postprocess_answers_closed(output, task, choices=None):
     final_output = None
     if choices is not None:
@@ -283,6 +283,7 @@ class CosineSimilarity(nn.Module):
         return (normalized_tensor_1 * normalized_tensor_2).sum(dim=-1)
 
 
+@tracer.llm
 def extract_keywords(questions, task, openai_key):
     TASK_PROMPT = {
         "popqa": "Extract at most three keywords separated by comma from the following dialogues and questions as queries for the web search, including topic background within dialogues and main intent within questions. \n\nquestion: What is Henry Feilden's occupation?\nquery: Henry Feilden, occupation\n\nquestion: In what city was Billy Carlson born?\nquery: city, Billy Carlson, born\n\nquestion: What is the religion of John Gwynn?\nquery: religion of John Gwynn\n\nquestion: What sport does Kiribati men's national basketball team play?\nquery: sport, Kiribati men's national basketball team play\n\nquestion: {{question}}\nquery: ",
@@ -296,20 +297,12 @@ def extract_keywords(questions, task, openai_key):
     queries = []
     prompt_template = TASK_PROMPT[task]
     for question in tqdm(questions[:]):
-        inputs = prompt_template.format(question=question)
-        messages = [
-            {"role": "user", "content": inputs},
-        ]
+        with using_prompt_template(prompt_template, variables={"question": question}):
+            inputs = prompt_template.format(question=question)
+            messages = [
+                {"role": "user", "content": inputs},
+            ]
 
-        try:
-            completion = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo-16k",
-                temperature=0.1,
-                messages=messages,
-            )
-        except openai.error.RateLimitError:
-            print("Rate limit error")
-            sleep(60)
             try:
                 completion = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo-16k",
@@ -319,16 +312,26 @@ def extract_keywords(questions, task, openai_key):
             except openai.error.RateLimitError:
                 print("Rate limit error")
                 sleep(60)
-                completion = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo-16k",
-                    temperature=0.1,
-                    messages=messages,
-                )
-        results = completion["choices"][0]["message"]["content"]
-        queries.append(results)
+                try:
+                    completion = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo-16k",
+                        temperature=0.1,
+                        messages=messages,
+                    )
+                except openai.error.RateLimitError:
+                    print("Rate limit error")
+                    sleep(60)
+                    completion = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo-16k",
+                        temperature=0.1,
+                        messages=messages,
+                    )
+            results = completion["choices"][0]["message"]["content"]
+            queries.append(results)
     return queries
 
 
+@tracer.chain
 def select_relevants(strips, query, tokenizer, model, device, top_n=5):
     device = device if torch.cuda.is_available() else "cpu"
     max_length = 512
