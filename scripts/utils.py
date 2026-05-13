@@ -9,10 +9,21 @@ import os
 from time import sleep
 import torch
 import torch.nn as nn
+
 # Phoenix OpenAI tracing
 import phoenix as px
-import openinference.instrumentation.openai
-openinference.instrumentation.openai.instrument()
+from openinference.instrumentation.openai import OpenAIInstrumentor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk import trace as trace_sdk
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+
+endpoint = "http://127.0.0.1:6006/v1/traces"
+tracer_provider = trace_sdk.TracerProvider()
+tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(endpoint)))
+# Optionally, you can also print the spans to the console.
+tracer_provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
+
+OpenAIInstrumentor().instrument(tracer_provider=tracer_provider)
 
 PROMPT_DICT = {
     "prompt_input": (
