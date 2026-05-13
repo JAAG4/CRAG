@@ -1,7 +1,10 @@
 import argparse
 from utils import load_file
 import json
-import phoenix as px
+
+
+from tracing_phx import tracer
+from phoenix.otel import using_metadata
 
 INPUT_FILES = {
     "popqa": "../retrieval_lm/eval_data/popqa_longtail_w_gs.jsonl",
@@ -24,21 +27,20 @@ def main():
     parser.add_argument("--postprocess", action="store_true")
     args = parser.parse_args()
 
-    with px.run("data_process") as run:
-        input_file = INPUT_FILES[args.dataset]
-        dataset = args.dataset
-        input_data = load_file(input_file)
-        pre = args.postprocess
-        run.log_event(
-            "load_input_data",
-            metadata={
-                "dataset": args.dataset,
-                "input_file": input_file,
-                "count": len(input_data),
-            },
-        )
+    input_file = INPUT_FILES[args.dataset]
+    dataset = args.dataset
+    input_data = load_file(input_file)
+    pre = args.postprocess
+    with using_metadata(
+        {
+            "dataset": args.dataset,
+            "input_file": input_file,
+            "count": len(input_data),
+            "pre": pre,
+        }
+    ):
         if dataset == "bio":
-            with px.trace("bio_processing") as span:
+            with tracer.start_as_current_span("bio_processing") as span:
                 questions = []
                 passages = []
                 contents = []
@@ -60,20 +62,18 @@ def main():
                     f.write("\n".join(passages))
                 with open("../data/bio/test_bio.txt", "w") as f:
                     f.write("\n".join(contents))
-                span.set_attribute("questions_count", len(questions))
-                span.set_attribute("passages_count", len(passages))
-                span.set_attribute("contents_count", len(contents))
-            run.log_event(
-                "bio_written",
-                metadata={
-                    "questions": len(questions),
-                    "passages": len(passages),
-                    "dataset": "bio",
-                },
-            )
+
+                span.set_attributes(
+                    {
+                        "questions_count": len(questions),
+                        "passages_count": len(passages),
+                        "contents_count": len(contents),
+                        "dataset": "bio",
+                    }
+                )
 
         elif dataset == "arc_challenge":
-            with px.trace("arc_processing") as span:
+            with tracer.start_as_current_span("arc_processing") as span:
                 questions = []
                 passages = []
                 choice_contents = []
@@ -110,17 +110,18 @@ def main():
                     f.write("\n".join(passages))
                 with open("../data/arc_challenge/test_arc_challenge.txt", "w") as f:
                     f.write("\n".join(contents))
-                span.set_attribute("questions_count", len(questions))
-                span.set_attribute("passages_count", len(passages))
-                span.set_attribute("choice_contents_count", len(choice_contents))
-                span.set_attribute("contents_count", len(contents))
-            run.log_event(
-                "arc_written",
-                metadata={"questions": len(questions), "dataset": "arc_challenge"},
-            )
+                span.set_attributes(
+                    {
+                        "questions_count": len(questions),
+                        "passages_count": len(passages),
+                        "choice_contents_count": len(choice_contents),
+                        "contents_count": len(contents),
+                        "dataset": "arc_challenge",
+                    }
+                )
 
         elif dataset == "pubqa":
-            with px.trace("pubqa_processing") as span:
+            with tracer.start_as_current_span("pubqa_processing") as span:
                 questions = []
                 passages = []
                 contents = []
@@ -141,16 +142,17 @@ def main():
                     f.write("\n".join(passages))
                 with open("../data/pubqa/test_pubqa.txt", "w") as f:
                     f.write("\n".join(contents))
-                span.set_attribute("questions_count", len(questions))
-                span.set_attribute("passages_count", len(passages))
-                span.set_attribute("contents_count", len(contents))
-            run.log_event(
-                "pubqa_written",
-                metadata={"questions": len(questions), "dataset": "pubqa"},
-            )
+                span.set_attributes(
+                    {
+                        "questions_count": len(questions),
+                        "passages_count": len(passages),
+                        "contents_count": len(contents),
+                        "dataset": "pubqa",
+                    }
+                )
 
         elif dataset == "popqa":
-            with px.trace("popqa_processing") as span:
+            with tracer.start_as_current_span("popqa_processing") as span:
                 questions = []
                 passages = []
                 contents = []
@@ -176,16 +178,17 @@ def main():
                     f.write("\n".join(passages))
                 with open("../data/{}/test_popqa.txt".format(dataset), "w") as f:
                     f.write("\n".join(contents))
-                span.set_attribute("questions_count", len(questions))
-                span.set_attribute("passages_count", len(passages))
-                span.set_attribute("contents_count", len(contents))
-            run.log_event(
-                "popqa_written",
-                metadata={"questions": len(questions), "dataset": "popqa"},
-            )
+                span.set_attributes(
+                    {
+                        "questions_count": len(questions),
+                        "passages_count": len(passages),
+                        "contents_count": len(contents),
+                        "dataset": "popqa",
+                    }
+                )
 
         if pre:
-            with px.trace("postprocess") as span:
+            with tracer.start_as_current_span("postprocess") as span:
                 with open("../data/{}/ref/correct".format(dataset), "r") as f:
                     contexts = [l.strip()[1:] for l in f.readlines()]
                 with open("../data/{}/ref/incorrect".format(dataset), "r") as f:
@@ -240,11 +243,12 @@ def main():
                     "../data/{}/output/{}_selfcrag.json".format(dataset, dataset), "w"
                 ) as f:
                     json.dump(pre_data, f)
-                span.set_attribute("mode", args.mode)
-                span.set_attribute(
-                    "output_file", f"../data/{dataset}/output/{dataset}_selfcrag.json"
+                span.set_attributes(
+                    {
+                        "mode": args.mode,
+                        "output_file": f"../data/{dataset}/output/{dataset}_selfcrag.json",
+                    }
                 )
-            run.log_event("postprocess", metadata={"mode": args.mode})
 
 
 if __name__ == "__main__":

@@ -3,8 +3,9 @@ import os
 from tqdm import tqdm
 import json
 from utils import extract_keywords, select_relevants
-import phoenix as px
-from phoenix.tracing import SpanKind
+
+from phoenix.otel import using_metadata
+from tracing_phx import tracer
 import requests
 
 from transformers import T5ForSequenceClassification, T5Tokenizer
@@ -154,7 +155,6 @@ def visit_pages(questions, web_results, output_file, model_name, device, mode):
                     model=model,
                     device=device,
                     top_n=top_n,
-                    mode="cross_encode",
                 )
         i += 1
         output_results.append(results.replace("\n", " "))
@@ -189,22 +189,22 @@ def main():
     os.environ["OPENAI_API_KEY"] = args.openai_key
     with open(args.input_queries, "r") as query_f:
         questions = [q.strip() for q in query_f.readlines()][:10]
-    with px.run("external_knowledge_prep") as run:
+    with tracer.start_as_current_span("external_knowledge_prep") as span:
         search_queries = generate_knowledge_q(
             questions, args.task, args.openai_key, args.mode
         )
-        run.log_event(
-            "search_queries",
-            input=questions,
-            output=search_queries,
-            metadata={"task": args.task, "mode": args.mode},
-        )
-    with run.span(
-        name="search", kind=SpanKind.RETRIEVER, attributes={"task": args.task}
+        span.set_attributes({"task": args.task, "mode": args.mode})
+        span.set_input({"queries": questions})
+        span.set_output(search_queries)
+
+    with tracer.start_as_current_span(
+        name="search",
+        openinference_span_kind="retriever",
+        attributes={"task": args.task},
     ) as span:
         search_results = Search(search_queries, args.search_path, args.search_key)
-        span.log_event("search_results", input=search_queries, output=search_results)
-    with run.span(name="visit_pages", kind=SpanKind.RETRIEVER) as span:
+        span.set_input({"queries": search_queries})
+        span.set_output(search_results)
         results = visit_pages(
             questions,
             search_results,
@@ -213,7 +213,8 @@ def main():
             args.device,
             args.mode,
         )
-        span.log_event("final_knowledge", input=search_results, output=results)
+        span.set_input({"search_results": search_results})
+        span.set_output(results)
 
 
 if __name__ == "__main__":

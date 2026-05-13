@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 
 # Phoenix OpenAI tracing
-import phoenix as px
+
 from openinference.instrumentation.openai import OpenAIInstrumentor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk import trace as trace_sdk

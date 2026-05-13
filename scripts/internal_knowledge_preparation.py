@@ -3,11 +3,13 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 from transformers import T5ForSequenceClassification, T5Tokenizer
-from phoenix.tracing import SpanKind
 
+from phoenix.otel import using_metadata
+from tracing_phx import tracer
 from utils import select_relevants
 
 
+@tracer.chain
 def extract_strips_from_psg(psg, mode="excerption"):
     if mode == "fixed_num":
         final_strips = []
@@ -56,6 +58,7 @@ def extract_strips_from_psg(psg, mode="excerption"):
         return [psg]
 
 
+@tracer.chain
 def knowledge_refinement(
     psgs, queries, output_path, model_name, device, decompose_mode
 ):
@@ -108,19 +111,26 @@ def main():
     )
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
-    with px.run("internal_knowledge_prep") as run:
+    with tracer.start_as_current_span("internal_knowledge_prep") as span:
         with open(args.input_retrieval, "r") as psg_f, open(
             args.input_queries, "r"
         ) as query_f:
             passages = [p.strip().split("[sep]") for p in psg_f.readlines()]
             queries = [q.strip() for q in query_f.readlines()]
-        run.log_event(
-            "data_loaded",
-            input={"retrieval": args.input_retrieval, "queries": args.input_queries},
-        )
-        with run.span(
-            name="refinement",
-            kind=SpanKind.RETRIEVER,
+
+            span.set_input(
+                {"retrieval": args.input_retrieval, "queries": args.input_queries}
+            )
+    with using_metadata(
+        {
+            "output_file": args.output_file,
+            "num passages": len(passages) if passages else None,
+            "num queries": len(queries) if queries else None,
+        }
+    ):
+        with tracer.start_as_current_span(
+            "refinement-internal-knowledge",
+            openinference_span_kind="retriever",
             attributes={"decompose_mode": args.decompose_mode},
         ) as span:
             results = knowledge_refinement(
@@ -130,14 +140,6 @@ def main():
                 args.model_path,
                 args.device,
                 args.decompose_mode,
-            )
-            span.log_event(
-                "refined_results_written",
-                metadata={
-                    "output_file": args.output_file,
-                    "num passages": len(passages) if passages else None,
-                    "num queries": len(queries) if queries else None,
-                },
             )
 
 
