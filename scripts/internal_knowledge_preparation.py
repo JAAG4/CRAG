@@ -111,7 +111,9 @@ def main():
     )
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
-    with tracer.start_as_current_span("internal_knowledge_prep") as span:
+    with tracer.start_as_current_span(
+        "internal_knowledge_prep", openinference_span_kind="chain"
+    ) as span:
         with open(args.input_retrieval, "r") as psg_f, open(
             args.input_queries, "r"
         ) as query_f:

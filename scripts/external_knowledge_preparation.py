@@ -193,7 +193,9 @@ def main():
     os.environ["OPENAI_API_KEY"] = args.openai_key
     with open(args.input_queries, "r") as query_f:
         questions = [q.strip() for q in query_f.readlines()][:10]
-    with tracer.start_as_current_span("external_knowledge_prep") as span:
+    with tracer.start_as_current_span(
+        "external_knowledge_prep", openinference_span_kind="chain"
+    ) as span:
         search_queries = generate_knowledge_q(
             questions, args.task, args.openai_key, args.mode
         )
