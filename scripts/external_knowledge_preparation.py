@@ -221,7 +221,7 @@ def main():
             args.device,
             args.mode,
         )
-        span.set_atrtibutes(
+        span.set_attributes(
             {
                 "num_results": len(search_results),
                 "queries": search_queries,
