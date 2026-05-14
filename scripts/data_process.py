@@ -40,7 +40,7 @@ def main():
         }
     ):
         if dataset == "bio":
-            with tracer.start_as_current_span("bio_processing") as span:
+            with tracer.start_as_current_span("bio_processing",openinference_span_kind="chain") as span:
                 questions = []
                 passages = []
                 contents = []
@@ -73,7 +73,7 @@ def main():
                 )
 
         elif dataset == "arc_challenge":
-            with tracer.start_as_current_span("arc_processing") as span:
+            with tracer.start_as_current_span("arc_processing",openinference_span_kind="chain") as span:
                 questions = []
                 passages = []
                 choice_contents = []
@@ -121,7 +121,7 @@ def main():
                 )
 
         elif dataset == "pubqa":
-            with tracer.start_as_current_span("pubqa_processing") as span:
+            with tracer.start_as_current_span("pubqa_processing",openinference_span_kind="chain") as span:
                 questions = []
                 passages = []
                 contents = []
@@ -152,7 +152,7 @@ def main():
                 )
 
         elif dataset == "popqa":
-            with tracer.start_as_current_span("popqa_processing") as span:
+            with tracer.start_as_current_span("popqa_processing",openinference_span_kind="chain") as span:
                 questions = []
                 passages = []
                 contents = []
@@ -188,7 +188,7 @@ def main():
                 )
 
         if pre:
-            with tracer.start_as_current_span("postprocess") as span:
+            with tracer.start_as_current_span("postprocess",openinference_span_kind="chain") as span:
                 with open("../data/{}/ref/correct".format(dataset), "r") as f:
                     contexts = [l.strip()[1:] for l in f.readlines()]
                 with open("../data/{}/ref/incorrect".format(dataset), "r") as f:
