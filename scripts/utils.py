@@ -307,7 +307,7 @@ def extract_keywords(questions, task, openai_key):
 
             try:
                 completion = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo-16k",
+                    model="llama-3.1-8b-instant",
                     temperature=0.1,
                     messages=messages,
                 )
@@ -316,7 +316,7 @@ def extract_keywords(questions, task, openai_key):
                 sleep(60)
                 try:
                     completion = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo-16k",
+                        model="llama-3.1-8b-instant",
                         temperature=0.1,
                         messages=messages,
                     )
@@ -324,7 +324,7 @@ def extract_keywords(questions, task, openai_key):
                     print("Rate limit error")
                     sleep(60)
                     completion = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo-16k",
+                        model="llama-3.1-8b-instant",
                         temperature=0.1,
                         messages=messages,
                     )
