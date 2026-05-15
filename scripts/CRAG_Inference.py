@@ -1,25 +1,12 @@
 import argparse
-import logging
 
-import os
-import re
-from tempfile import template
-from sklearn.utils import shuffle
-import pandas as pd
-import numpy as np
 from tqdm import tqdm
 
 import torch
-import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
-from torch.optim import AdamW
-from transformers import get_scheduler
+
 
 from vllm import LLM, SamplingParams
 from transformers import T5Tokenizer, T5ForSequenceClassification
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
-import time
 
 from phoenix.otel import using_metadata, using_prompt_template
 from tracing_phx import tracer
@@ -89,21 +76,24 @@ def format_prompt(i, task, question, paragraph=None, modelname="selfrag_llama"):
     else:
         if task == "arc_challenge":
             template = (
-        
-        "Refer to the following documents, follow the instruction and answer the question.\n\nDocuments: {paragraph}"
-        "\nQuestion: {question}"
-        "\n\nInstruction: Given four answer candidates, A, B, C and D, choose the best answer choice."
-        "\nChoices:{choices}"
-    )
-        variables = {"paragraph": paragraph, "question": question, "choices": choices}
+                "Refer to the following documents, follow the instruction and answer the question.\n\nDocuments: {paragraph}"
+                "\nQuestion: {question}"
+                "\n\nInstruction: Given four answer candidates, A, B, C and D, choose the best answer choice."
+                "\nChoices:{choices}"
+            )
+            variables = {
+                "paragraph": paragraph,
+                "question": question,
+                "choices": choices,
+            }
 
         elif task == "pubqa":
             if modelname == "llama":
                 template = (
-            "Read the documents and answer the question: Is the following statement correct or not? \n\nDocuments: {paragraph}"
-            "\n\nStatement: {question}"
-            "\n\nOnly say true if the statement is true; otherwise say false."
-        )
+                    "Read the documents and answer the question: Is the following statement correct or not? \n\nDocuments: {paragraph}"
+                    "\n\nStatement: {question}"
+                    "\n\nOnly say true if the statement is true; otherwise say false."
+                )
                 variables = {"paragraph": paragraph, "question": question}
 
             else:
@@ -115,6 +105,7 @@ def format_prompt(i, task, question, paragraph=None, modelname="selfrag_llama"):
     with using_prompt_template(template=template, variables=variables):
         prompt = template.format(**variables)
     return prompt
+
 
 @tracer.chain
 def postprocess_answer_option_conditioned(answer):
@@ -174,6 +165,7 @@ def data_preprocess(file, n_docs):
             passages.append(" [sep] ".join(tmp_psgs[:n_docs]))
     return queries, passages
 
+
 @tracer.chain
 def get_evaluator_data(file):
     with_label = False
@@ -219,6 +211,7 @@ def inference(tokenizer, model, file, device=torch.device("cpu"), n_docs=10):
         preds.append(pred_flat)
     return scores
 
+
 @tracer.chain
 def process_flag(scores, n_docs, threshold1, threshold2):
     flags = []
@@ -247,6 +240,7 @@ def process_flag(scores, n_docs, threshold1, threshold2):
 
 # ADDED BY Ivan
 
+
 @tracer.chain
 def is_popqa_alike(queries, paragraphs):
     # Check a sample of the data
@@ -260,7 +254,7 @@ def is_popqa_alike(queries, paragraphs):
     return False
 
 
-@tracer.chain  
+@tracer.chain
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--generator_path", type=str)
@@ -373,12 +367,7 @@ def main():
         "generation", openinference_span_kind="chain"
     ) as span:
         if args.method != "no_retrieval":
-            """
-            for i, (q, p) in tqdm(enumerate(zip(queries, paragraphs))):
-                prompt = format_prompt(i, args.task, q, p, modelname)
-                pred = generator.generate([prompt], sampling_params)
-                preds.append(postprocess_answer_option_conditioned(pred[0].outputs[0].text))
-            """
+
             all_prompts = []
             for i, (q, p) in enumerate(zip(queries, paragraphs)):
                 prompt = format_prompt(i, args.task, q, p, modelname)
