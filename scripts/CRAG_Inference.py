@@ -3,6 +3,7 @@ import logging
 
 import os
 import re
+from tempfile import template
 from sklearn.utils import shuffle
 import pandas as pd
 import numpy as np
@@ -20,7 +21,8 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 import time
 
-# logger = logging.getLogger(__name__)
+from phoenix.otel import using_metadata, using_prompt_template
+from tracing_phx import tracer
 
 TASK_INST = {
     "wow": "Given a chat history separated by new lines, generates an informative, knowledgeable and engaging response. ",
@@ -55,6 +57,7 @@ task = ### Instruction: + TASK_INST[task] + ## Input: + question + choices + ###
 """
 
 
+@tracer.tool
 def format_prompt(i, task, question, paragraph=None, modelname="selfrag_llama"):
     if paragraph is not None:
         paragraph = " ".join(paragraph.split(" ")[:])
@@ -78,45 +81,42 @@ def format_prompt(i, task, question, paragraph=None, modelname="selfrag_llama"):
 
     if instruction == question:
         # PopQA
-        prompt = (
-            "Refer to the following documents, follow the instruction and answer the question.\n\nDocuments: "
-            + paragraph
-            + "\n\nInstruction: Answer the question: "
-            + question
+        template = (
+            "Refer to the following documents, follow the instruction and answer the question.\n\nDocuments: {paragraph}"
+            "\n\nInstruction: Answer the question: {question}"
         )
+        variables = {"paragraph": paragraph, "question": question}
     else:
         if task == "arc_challenge":
-            prompt = (
-                "Refer to the following documents, follow the instruction and answer the question.\n\nDocuments: "
-                + paragraph
-                + "\nQuestion: "
-                + question
-                + "\n\nInstruction: Given four answer candidates, A, B, C and D, choose the best answer choice."
-                + "\nChoices:"
-                + choices
-            )
+            template = (
+        
+        "Refer to the following documents, follow the instruction and answer the question.\n\nDocuments: {paragraph}"
+        "\nQuestion: {question}"
+        "\n\nInstruction: Given four answer candidates, A, B, C and D, choose the best answer choice."
+        "\nChoices:{choices}"
+    )
+        variables = {"paragraph": paragraph, "question": question, "choices": choices}
 
         elif task == "pubqa":
             if modelname == "llama":
-                prompt = (
-                    "Read the documents and answer the question: Is the following statement correct or not? \n\nDocuments: "
-                    + paragraph
-                    + "\n\nStatement: "
-                    + question
-                    + "\n\nOnly say true if the statement is true; otherwise say false."
-                )
-            else:
-                prompt = "### Instruction:\n{0}\n\n### Response:\n".format(instruction)
-                if paragraph is not None:
-                    prompt += "[Retrieval]<paragraph>{0}</paragraph>".format(paragraph)
-            # prompt = "Refer to the following documents, follow the instruction and answer the question.\n\nDocuments: " + paragraph + "\n\nInstruction: Is the following statement correct or not? Say true if it's correct; otherwise say false. \nStatement: " + question
-    # prompt = "### Instruction:\n{0}\n\n### Response:\n".format(instruction)
-    # if paragraph is not None:
-    #     prompt += "[Retrieval]<paragraph>{0}</paragraph>".format(paragraph)
+                template = (
+            "Read the documents and answer the question: Is the following statement correct or not? \n\nDocuments: {paragraph}"
+            "\n\nStatement: {question}"
+            "\n\nOnly say true if the statement is true; otherwise say false."
+        )
+                variables = {"paragraph": paragraph, "question": question}
 
+            else:
+                template = "### Instruction:\n{instruction}\n\n### Response:\n"
+                variables = {"instruction": instruction}
+                if paragraph is not None:
+                    template += "[Retrieval]<paragraph>{paragraph}</paragraph>"
+                    variables["paragraph"] = paragraph
+    with using_prompt_template(template=template, variables=variables):
+        prompt = template.format(**variables)
     return prompt
 
-
+@tracer.chain
 def postprocess_answer_option_conditioned(answer):
     for token in control_tokens:
         answer = answer.replace(token, "")
@@ -132,6 +132,7 @@ def postprocess_answer_option_conditioned(answer):
     return answer
 
 
+@tracer.tool
 def data_preprocess(file, n_docs):
     # with_label = True
     with_label = False
@@ -173,7 +174,7 @@ def data_preprocess(file, n_docs):
             passages.append(" [sep] ".join(tmp_psgs[:n_docs]))
     return queries, passages
 
-
+@tracer.chain
 def get_evaluator_data(file):
     with_label = False
     # with_label = True
@@ -192,6 +193,7 @@ def get_evaluator_data(file):
             return content, None
 
 
+@tracer.llm
 def inference(tokenizer, model, file, device=torch.device("cpu"), n_docs=10):
     model.eval()
     content, label = get_evaluator_data(file)
@@ -217,7 +219,7 @@ def inference(tokenizer, model, file, device=torch.device("cpu"), n_docs=10):
         preds.append(pred_flat)
     return scores
 
-
+@tracer.chain
 def process_flag(scores, n_docs, threshold1, threshold2):
     flags = []
     for score in scores:
@@ -245,7 +247,7 @@ def process_flag(scores, n_docs, threshold1, threshold2):
 
 # ADDED BY Ivan
 
-
+@tracer.chain
 def is_popqa_alike(queries, paragraphs):
     # Check a sample of the data
     sample_q = queries[:5]
@@ -258,6 +260,7 @@ def is_popqa_alike(queries, paragraphs):
     return False
 
 
+@tracer.chain  
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--generator_path", type=str)
@@ -319,73 +322,85 @@ def main():
     )
     model.to(device)
 
-    queries, passages = data_preprocess(args.input_file, args.ndocs)
+    with tracer.start_as_current_span(
+        "data_preparation", openinference_span_kind="chain"
+    ) as span:
+        queries, passages = data_preprocess(args.input_file, args.ndocs)
 
-    if args.method == "rag":
-        paragraphs = passages
-    elif args.method == "crag":
-        scores = inference(
-            tokenizer=tokenizer,
-            model=model,
-            file=args.input_file,
-            device=device,
-            n_docs=args.ndocs,
+        if args.method == "rag":
+            paragraphs = passages
+        elif args.method == "crag":
+            scores = inference(
+                tokenizer=tokenizer,
+                model=model,
+                file=args.input_file,
+                device=device,
+                n_docs=args.ndocs,
+            )
+            identification_flag = process_flag(
+                scores, args.ndocs, args.upper_threshold, args.lower_threshold
+            )
+
+            with open(args.internal_knowledge_path, "r") as in_f, open(
+                args.external_knowledge_path, "r"
+            ) as ex_f, open(args.combined_knowledge_path, "r") as comb_f:
+                internal_paragraphs = [l.strip() for l in in_f.readlines()]
+                external_paragraphs = [l.strip() for l in ex_f.readlines()]
+                combined_paragraphs = [l.strip() for l in comb_f.readlines()]
+
+            paragraphs = []
+            n = 0
+            for flag, i, e, c in zip(
+                identification_flag,
+                internal_paragraphs,
+                external_paragraphs,
+                combined_paragraphs,
+            ):
+                if flag == 0:
+                    paragraphs.append(e)  # incorrect
+                elif flag == 1:
+                    paragraphs.append(c)  # ambiguous
+                elif flag == 2:
+                    paragraphs.append(i)  # correct
+                n += 1
+        span.set_attributes(
+            {"task": args.task, "method": args.method, "num_queries": len(queries)}
         )
-        identification_flag = process_flag(
-            scores, args.ndocs, args.upper_threshold, args.lower_threshold
-        )
-
-        with open(args.internal_knowledge_path, "r") as in_f, open(
-            args.external_knowledge_path, "r"
-        ) as ex_f, open(args.combined_knowledge_path, "r") as comb_f:
-            internal_paragraphs = [l.strip() for l in in_f.readlines()]
-            external_paragraphs = [l.strip() for l in ex_f.readlines()]
-            combined_paragraphs = [l.strip() for l in comb_f.readlines()]
-
-        paragraphs = []
-        n = 0
-        for flag, i, e, c in zip(
-            identification_flag,
-            internal_paragraphs,
-            external_paragraphs,
-            combined_paragraphs,
-        ):
-            if flag == 0:
-                paragraphs.append(e)  # incorrect
-            elif flag == 1:
-                paragraphs.append(c)  # ambiguous
-            elif flag == 2:
-                paragraphs.append(i)  # correct
-            n += 1
 
     preds = []
     modelname = "selfrag_llama" if "selfrag" in args.generator_path else "llama"
-    if args.method != "no_retrieval":
-        """
-        for i, (q, p) in tqdm(enumerate(zip(queries, paragraphs))):
-            prompt = format_prompt(i, args.task, q, p, modelname)
-            pred = generator.generate([prompt], sampling_params)
-            preds.append(postprocess_answer_option_conditioned(pred[0].outputs[0].text))
-        """
-        all_prompts = []
-        for i, (q, p) in enumerate(zip(queries, paragraphs)):
-            prompt = format_prompt(i, args.task, q, p, modelname)
-            all_prompts.append(prompt)
+    with tracer.start_as_current_span(
+        "generation", openinference_span_kind="chain"
+    ) as span:
+        if args.method != "no_retrieval":
+            """
+            for i, (q, p) in tqdm(enumerate(zip(queries, paragraphs))):
+                prompt = format_prompt(i, args.task, q, p, modelname)
+                pred = generator.generate([prompt], sampling_params)
+                preds.append(postprocess_answer_option_conditioned(pred[0].outputs[0].text))
+            """
+            all_prompts = []
+            for i, (q, p) in enumerate(zip(queries, paragraphs)):
+                prompt = format_prompt(i, args.task, q, p, modelname)
+                all_prompts.append(prompt)
 
-        # Pass the ENTIRE list to vLLM. It will batch them internally!
-        print(f"Generating {len(all_prompts)} responses...")
-        outputs = generator.generate(all_prompts, sampling_params)
+            # Pass the ENTIRE list to vLLM. It will batch them internally!
+            print(f"Generating {len(all_prompts)} responses...")
+            outputs = generator.generate(all_prompts, sampling_params)
 
-        # Collect results
-        for output in outputs:
-            generated_text = output.outputs[0].text
-            preds.append(postprocess_answer_option_conditioned(generated_text))
-    else:
-        for i, q in tqdm(enumerate(queries)):
-            p = None
-            prompt = format_prompt(i, args.task, q, p, modelname)
-            pred = generator.generate([prompt], sampling_params)
-            preds.append(postprocess_answer_option_conditioned(pred[0].outputs[0].text))
+            # Collect results
+            for output in outputs:
+                generated_text = output.outputs[0].text
+                preds.append(postprocess_answer_option_conditioned(generated_text))
+        else:
+            for i, q in tqdm(enumerate(queries)):
+                p = None
+                prompt = format_prompt(i, args.task, q, p, modelname)
+                pred = generator.generate([prompt], sampling_params)
+                preds.append(
+                    postprocess_answer_option_conditioned(pred[0].outputs[0].text)
+                )
+        span.set_attributes({"num_predictions": len(preds)})
 
     with open(args.output_file, "w") as f:
         f.write("\n".join(preds))
