@@ -364,7 +364,7 @@ def main():
     preds = []
     modelname = "selfrag_llama" if "selfrag" in args.generator_path else "llama"
     with tracer.start_as_current_span(
-        "generation", openinference_span_kind="chain"
+        "CRAG generation", openinference_span_kind="llm"
     ) as span:
         if args.method != "no_retrieval":
 
@@ -375,6 +375,7 @@ def main():
 
             # Pass the ENTIRE list to vLLM. It will batch them internally!
             print(f"Generating {len(all_prompts)} responses...")
+            span.set_input(all_prompts)
             outputs = generator.generate(all_prompts, sampling_params)
 
             # Collect results
@@ -382,14 +383,18 @@ def main():
                 generated_text = output.outputs[0].text
                 preds.append(postprocess_answer_option_conditioned(generated_text))
         else:
+            promptlist = []
             for i, q in tqdm(enumerate(queries)):
                 p = None
                 prompt = format_prompt(i, args.task, q, p, modelname)
+                promptlist.append(prompt)
                 pred = generator.generate([prompt], sampling_params)
                 preds.append(
                     postprocess_answer_option_conditioned(pred[0].outputs[0].text)
                 )
+            span.set_input(promptlist)
         span.set_attributes({"num_predictions": len(preds)})
+        span.set_output(preds)
 
     with open(args.output_file, "w") as f:
         f.write("\n".join(preds))
