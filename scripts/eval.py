@@ -15,8 +15,10 @@ from utils import (
     load_special_tokens,
 )
 from metrics import match, accuracy, accuracy_TrueFalse_lenient
+from tracing_phx import tracer
 
 
+@tracer.chain
 def preprocess_input_data(dataset, task=None):
     new_data = []
     if task in TASK_INST:
@@ -98,7 +100,7 @@ def main():
     count = 0
     for i, (pred, row) in tqdm(enumerate(zip(resps[:], input_data[:]))):
         pred = pred.strip()
-        
+
         preds.append(pred)
         all_results.append(None)
         if "answers" not in row and "answer" in row:
@@ -144,10 +146,11 @@ def main():
         "metric_mean": np.mean(metric_results),
         "scores": scores,
     }
-    #print(json.dumps(final_results, indent=4),"\n")
+    # print(json.dumps(final_results, indent=4),"\n")
     print("Final EXACT accuracy result: {0}".format(np.mean(metric_results)))
     if args.metric == "accuracy":
         print("Lenient Accuracy result: {0}".format(np.mean(alt_metric_results)))
+
 
 if __name__ == "__main__":
     main()
