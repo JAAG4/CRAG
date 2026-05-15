@@ -13,7 +13,7 @@ import torch.nn as nn
 # Phoenix OpenAI tracing
 
 from openinference.instrumentation.openai import OpenAIInstrumentor
-from phoenix.otel import using_prompt_template
+from phoenix.otel import using_prompt_template, using_metadata
 
 from tracing_phx import tracer
 
@@ -106,6 +106,7 @@ def load_special_tokens(tokenizer, use_grounding=False, use_utility=False):
     return ret_tokens, rel_tokens, grd_tokens, ut_tokens
 
 
+@tracer.tool
 def fix_spacing(input_text):
     # Add a space after periods that lack whitespace
     output_text = re.sub(r"(?<=\w)([.!?])(?=\w)", r"\1 ", input_text)
@@ -141,12 +142,14 @@ def postprocess(pred):
     return pred
 
 
+@tracer.tool
 def load_jsonlines(file):
     with jsonlines.open(file, "r") as jsonl_f:
         lst = [obj for obj in jsonl_f]
     return lst
 
 
+@tracer.tool
 def load_file(input_fp):
     if input_fp.endswith(".json"):
         input_data = json.load(open(input_fp))
@@ -155,6 +158,7 @@ def load_file(input_fp):
     return input_data
 
 
+@tracer.tool
 def save_file_jsonl(data, fp):
     with jsonlines.open(fp, mode="w") as writer:
         writer.write_all(data)
@@ -304,31 +308,43 @@ def extract_keywords(questions, task, openai_key):
             messages = [
                 {"role": "user", "content": inputs},
             ]
-
-            try:
-                completion = openai.ChatCompletion.create(
-                    model="llama-3.1-8b-instant",
-                    temperature=0.1,
-                    messages=messages,
-                )
-            except openai.error.RateLimitError:
-                print("Rate limit error")
-                sleep(60)
-                try:
-                    completion = openai.ChatCompletion.create(
-                        model="llama-3.1-8b-instant",
-                        temperature=0.1,
-                        messages=messages,
-                    )
-                except openai.error.RateLimitError:
-                    print("Rate limit error")
-                    sleep(60)
-                    completion = openai.ChatCompletion.create(
-                        model="llama-3.1-8b-instant",
-                        temperature=0.1,
-                        messages=messages,
-                    )
-            results = completion["choices"][0]["message"]["content"]
+            with using_metadata(
+                {
+                    "task": task,
+                    "model": "llama-3.1-8b-instant",
+                    "temperature": 0.1,
+                }
+            ):
+                with tracer.start_as_current_span(
+                    "extractKeywords openai.ChatCompletion.create",
+                    openinference_span_kind="llm",
+                ) as span:
+                    span.set_input(messages)
+                    try:
+                        completion = openai.ChatCompletion.create(
+                            model="llama-3.1-8b-instant",
+                            temperature=0.1,
+                            messages=messages,
+                        )
+                    except openai.error.RateLimitError:
+                        print("Rate limit error")
+                        sleep(60)
+                        try:
+                            completion = openai.ChatCompletion.create(
+                                model="llama-3.1-8b-instant",
+                                temperature=0.1,
+                                messages=messages,
+                            )
+                        except openai.error.RateLimitError:
+                            print("Rate limit error")
+                            sleep(60)
+                            completion = openai.ChatCompletion.create(
+                                model="llama-3.1-8b-instant",
+                                temperature=0.1,
+                                messages=messages,
+                            )
+                    results = completion["choices"][0]["message"]["content"]
+                    span.set_output(results)
             queries.append(results)
     return queries
 
