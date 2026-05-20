@@ -10,8 +10,6 @@ import requests
 
 from transformers import T5ForSequenceClassification, T5Tokenizer
 
-import sys
-
 
 @tracer.chain
 def generate_knowledge_q(questions, task, openai_key, mode):
@@ -62,7 +60,6 @@ def Search(queries, search_path, search_key):
 
 @tracer.tool
 def test_page_loader(url):
-    import requests
     from bs4 import BeautifulSoup
     import signal
 
@@ -91,7 +88,7 @@ def test_page_loader(url):
     paras = []
     title = soup.find("h1").text
     paragraphs = soup.find_all("p")
-    for i, p in enumerate(paragraphs):
+    for _, p in enumerate(paragraphs):
         if len(p.text) > 10:
             paras.append(title + ": " + p.text)
     return paras
@@ -152,7 +149,7 @@ def visit_pages(questions, web_results, output_file, model_name, device, mode):
                 output_results.append("; ".join(snippet))
                 results = "; ".join(snippet)
             else:
-                results, idxs = select_relevants(
+                results, _ = select_relevants(
                     strips=strips,
                     query=questions[i],
                     tokenizer=tokenizer,
