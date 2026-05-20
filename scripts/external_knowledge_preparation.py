@@ -29,12 +29,20 @@ def generate_knowledge_q(questions, task, openai_key, mode):
     return search_queries
 
 @tracer.tool
-def tavily_search(query,tavily_client=tavily_client)
-    return tavily_client.search(
-        query=query,
-        search_depth="advanced",
-        max_results=5,
-    )
+def tavily_search(queries,output_file,tavily_client=tavily_client):
+    search_results = []
+    for query in tqdm(queries, desc="Searching for urls...",total=len(queries)):
+        results_string="#"
+        tav_results = tavily_client.search(
+            query=query,
+            search_depth="advanced",
+            max_results=4,
+        )
+        all_responses_content = [tv_res["content"] for tv_res in tav_results["results"]]
+        results_string += "; ".join(all_responses_content)
+            #search_results.extend([{"queries":query,"results":rcontent}])
+        with open(output_file,"w",encoding="utf-8") as outf:
+            outf.write(results_string)
 
 
 @tracer.tool
@@ -54,7 +62,6 @@ def Search(queries, search_path, search_key):
             except (requests.exceptions.RequestException, ValueError):
                 reconnect += 1
                 print("url: {} failed * {}".format(url, reconnect))
-        # result = response.text
         result = json.loads(response.text)
         if "organic" in result:
             results = result["organic"][:10]
@@ -217,7 +224,8 @@ def main():
                 "output": search_queries,
             }
         )
-
+    tavily_search(search_queries,f"{args.output_file}_tavily.txt")
+    return
     with tracer.start_as_current_span(
         name="search",
         openinference_span_kind="retriever",

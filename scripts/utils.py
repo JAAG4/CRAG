@@ -374,8 +374,9 @@ def select_relevants(strips, query, tokenizer, model, device, top_n=5):
                         attention_mask=inputs["attention_mask"].to(device),
                     )
                 scores = float(outputs["logits"].cpu())
-            except:
+            except Exception as e:
                 scores = -1.0
+                print(f"Got Exception [{e}] on select_relevants ({input_content})")
         strips_data.append((scores, p, i))
 
     def take_idx(elem):
