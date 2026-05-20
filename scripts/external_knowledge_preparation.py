@@ -28,6 +28,14 @@ def generate_knowledge_q(questions, task, openai_key, mode):
         search_queries = queries
     return search_queries
 
+@tracer.tool
+def tavily_search(query,tavily_client=tavily_client)
+    return tavily_client.search(
+        query=query,
+        search_depth="advanced",
+        max_results=5,
+    )
+
 
 @tracer.tool
 def Search(queries, search_path, search_key):
