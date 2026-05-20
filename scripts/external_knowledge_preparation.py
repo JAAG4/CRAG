@@ -9,6 +9,11 @@ from tracing_phx import tracer
 import requests
 
 from transformers import T5ForSequenceClassification, T5Tokenizer
+from tavily import TavilyClient
+import os
+
+
+tavily_client = TavilyClient(os.environ["TAVILY_KEY"])
 
 
 @tracer.chain
