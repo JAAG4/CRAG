@@ -40,7 +40,7 @@ def tavily_search(queries,output_file,tavily_client=tavily_client):
                 max_results=4,
             )
             all_responses_content = [tv_res["content"].replace("\n"," ") for tv_res in tav_results["results"]]
-            results_string += "; ".join(all_responses_content)
+            results_string += "; ".join(all_responses_content) +"\n"
             #search_results.extend([{"queries":query,"results":rcontent}])
             outf.write(results_string)
 
