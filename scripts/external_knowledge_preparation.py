@@ -33,7 +33,7 @@ def generate_knowledge_q(questions, task, openai_key, mode):
 def tavily_search(queries, output_file, tavily=tavily_client):
     with open(output_file, "w", encoding="utf-8") as outf:
         queries = [
-            q.replace("claim: ", "").replace("\n\nquery: ", " ")
+            " ".join(q.replace("claim:", "").replace("query:", "").split())
             for q in queries
             if q.strip() != ""
         ]
