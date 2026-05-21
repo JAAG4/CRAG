@@ -300,7 +300,7 @@ def extract_keywords(questions, task, openai_key):
     openai.api_key = openai_key
     queries = []
     prompt_template = TASK_PROMPT[task]
-    for question in tqdm(questions[:]):
+    for question in tqdm(questions[:], desc="Extracting keywords..."):
         with using_prompt_template(
             template=prompt_template, variables={"question": question}
         ):
