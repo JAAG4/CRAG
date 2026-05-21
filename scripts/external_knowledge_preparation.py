@@ -40,6 +40,7 @@ def tavily_search(queries, output_file, tavily=tavily_client):
                     search_depth="advanced",
                     max_results=4,
                 )
+                print("\tQuery: `{}`".format(query))
             except BadRequestError as e:
                 print(f"\tError BadRequestError for query '{query}': {e}")
             else:
