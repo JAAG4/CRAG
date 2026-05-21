@@ -18,10 +18,10 @@ tavily_client = TavilyClient(os.environ["TAVILY_KEY"])
 
 @tracer.chain
 def generate_knowledge_q(questions, task, openai_key, mode):
-    if task == "bio":
-        queries = [q[7:-1] for q in questions]
-    else:
-        queries = extract_keywords(questions, task, openai_key)
+    # if task == "bio":
+    #     queries = [q[7:-1] for q in questions]
+    # else:
+    queries = extract_keywords(questions, task, openai_key)
     if mode == "wiki":
         search_queries = ["Wikipedia, " + e for e in queries]
     else:
@@ -231,7 +231,7 @@ def main():
     with open(args.input_queries, "r") as query_f:
         questions = [q.strip() for q in query_f.readlines()][:10]
     with tracer.start_as_current_span(
-        "external_knowledge_prep", openinference_span_kind="chain"
+        "generate_knowledge_q", openinference_span_kind="chain"
     ) as span:
         span.set_input(questions)
         search_queries = generate_knowledge_q(
