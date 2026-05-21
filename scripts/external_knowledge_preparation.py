@@ -221,6 +221,7 @@ def main():
     with tracer.start_as_current_span(
         "external_knowledge_prep", openinference_span_kind="chain"
     ) as span:
+        span.set_input(questions)
         search_queries = generate_knowledge_q(
             questions, args.task, args.openai_key, args.mode
         )
@@ -232,6 +233,7 @@ def main():
                 "output": search_queries,
             }
         )
+        span.set_output(search_queries)
     tavily_search(search_queries, f"{args.output_file}_tavily.txt")
     return
     with tracer.start_as_current_span(
