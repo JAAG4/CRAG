@@ -32,6 +32,11 @@ def generate_knowledge_q(questions, task, openai_key, mode):
 @tracer.tool
 def tavily_search(queries, output_file, tavily=tavily_client):
     with open(output_file, "w", encoding="utf-8") as outf:
+        queries = [
+            q.replace("claim: ", "").replace("\n\nquery: ", " ")
+            for q in queries
+            if q.strip() != ""
+        ]
         for query in tqdm(queries, desc="Searching for urls...", total=len(queries)):
             results_string = "#"
             try:
