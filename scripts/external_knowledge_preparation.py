@@ -39,21 +39,28 @@ def tavily_search(queries, output_file, tavily=tavily_client):
         ]
         for query in tqdm(queries, desc="Searching for urls...", total=len(queries)):
             results_string = "#"
-            try:
-                tav_results = tavily.search(
-                    query=query,
-                    search_depth="advanced",
-                    max_results=4,
-                )
-                print("\tQuery: `{}`".format(query))
-            except BadRequestError as e:
-                print(f"\tError BadRequestError for query '{query}': {e}")
-            else:
-                all_responses_content = [
-                    tv_res["content"].replace("\n", " ")
-                    for tv_res in tav_results["results"]
-                ]
-                results_string += "; ".join(all_responses_content) + "\n"
+            with tracer.start_as_current_span(
+                "tavily_search", openinference_span_kind="tool"
+            ) as span:
+                span.set_input({"query": query})
+                try:
+                    tav_results = tavily.search(
+                        query=query,
+                        search_depth="advanced",
+                        max_results=4,
+                    )
+                    print("\tQuery: `{}`".format(query))
+                except BadRequestError as e:
+                    print(f"\tError BadRequestError for query '{query}': {e}")
+                else:
+                    all_responses_content = [
+                        tv_res["content"].replace("\n", " ")
+                        for tv_res in tav_results["results"]
+                    ]
+                    results_string += "; ".join(all_responses_content) + "\n"
+                    span.set_output(
+                        {"raw": tav_results, "processed": all_responses_content}
+                    )
                 # search_results.extend([{"queries":query,"results":rcontent}])
                 outf.write(results_string)
 
