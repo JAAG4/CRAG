@@ -304,7 +304,7 @@ def extract_keywords(questions, task, openai_key):
         with using_prompt_template(
             template=prompt_template, variables={"question": question}
         ):
-            inputs = prompt_template.format(question=question)
+            inputs = prompt_template.replace("{{question}}", question)
             messages = [
                 {"role": "user", "content": inputs},
             ]
