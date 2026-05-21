@@ -10,8 +10,8 @@ import requests
 
 from transformers import T5ForSequenceClassification, T5Tokenizer
 from tavily import TavilyClient
+from tavily.errors import BadRequestError
 import os
-
 
 tavily_client = TavilyClient(os.environ["TAVILY_KEY"])
 
@@ -28,21 +28,28 @@ def generate_knowledge_q(questions, task, openai_key, mode):
         search_queries = queries
     return search_queries
 
+
 @tracer.tool
-def tavily_search(queries,output_file,tavily_client=tavily_client):
-    search_results = []
-    with open(output_file,"w",encoding="utf-8") as outf:
-        for query in tqdm(queries, desc="Searching for urls...",total=len(queries)):
-            results_string="#"
-            tav_results = tavily_client.search(
-                query=query,
-                search_depth="advanced",
-                max_results=4,
-            )
-            all_responses_content = [tv_res["content"].replace("\n"," ") for tv_res in tav_results["results"]]
-            results_string += "; ".join(all_responses_content) +"\n"
-            #search_results.extend([{"queries":query,"results":rcontent}])
-            outf.write(results_string)
+def tavily_search(queries, output_file, tavily=tavily_client):
+    with open(output_file, "w", encoding="utf-8") as outf:
+        for query in tqdm(queries, desc="Searching for urls...", total=len(queries)):
+            results_string = "#"
+            try:
+                tav_results = tavily.search(
+                    query=query,
+                    search_depth="advanced",
+                    max_results=4,
+                )
+            except BadRequestError as e:
+                print(f"\tError BadRequestError for query '{query}': {e}")
+            else:
+                all_responses_content = [
+                    tv_res["content"].replace("\n", " ")
+                    for tv_res in tav_results["results"]
+                ]
+                results_string += "; ".join(all_responses_content) + "\n"
+                # search_results.extend([{"queries":query,"results":rcontent}])
+                outf.write(results_string)
 
 
 @tracer.tool
@@ -224,7 +231,7 @@ def main():
                 "output": search_queries,
             }
         )
-    tavily_search(search_queries,f"{args.output_file}_tavily.txt")
+    tavily_search(search_queries, f"{args.output_file}_tavily.txt")
     return
     with tracer.start_as_current_span(
         name="search",
