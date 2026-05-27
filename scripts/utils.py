@@ -288,7 +288,87 @@ class CosineSimilarity(nn.Module):
 
 
 @tracer.llm
-def extract_keywords(questions, task, openai_key):
+def rewrite_queries_tavily(questions, task, openai_key) -> list[dict]:
+    openai.api_key = openai_key
+    RAG_REWRITE_SYSTEM_PROMPT = """ You are a helpful Health & Science Research Agent for a RAG-based fact-checking system using the Tavily API. Your task is to transform input claims into high-precision, objective search queries.
+**Operational Rules:**
+1. **Neutralize Verdicts:** Strip away sensationalism and conclusions. 
+- Change "starving cancer" to "dietary impact on cancer growth."
+- Change "dramatic benefit" to "clinical outcomes and efficacy."
+2. **Preserve Contextual Anchors:** Keep specific locations (e.g., "Houston," "Mozambique"), institutions ("University of Florida," "J&J"), and names ("Fauci," "Nixon") to ensure local/specific relevance.
+3. **Handle Myths & Policy:** 
+- For rumors (e.g., Love bugs, MMR side effects), focus the query on "scientific consensus" or "official documentation."
+- For legislative claims (e.g., "animal cruelty laws"), focus on "statutory language" or "legal amendments."
+4. **Dynamic Topic Routing:**
+- `topic: "finance"`: For corporate liability (J&J), health-related auctions (Hawking), or budget amendments.
+- `topic: "news"`: For current outbreaks, quarantines, or recent government statements.
+- `topic: "general"`: For medical guidelines, scientific research, and historical data.
+
+**Output Format:**
+Return ONLY a valid JSON object:
+{
+"query": "The neutralized, entity-rich search string",
+"topic": "news" | "general" | "finance",
+"search_depth": "advanced",
+"max_results": 5
+}
+"""
+    queries = []
+    prompt_template = """Input Phrase: {question}"""
+    for question in tqdm(questions[:], desc="Rewriting queries with Tavily..."):
+        with using_prompt_template(
+            template=prompt_template, variables={"question": question}
+        ):
+            inputs = prompt_template.format(question=question)
+            messages = [
+                {"role": "system", "content": RAG_REWRITE_SYSTEM_PROMPT},
+                {"role": "user", "content": inputs},
+            ]
+            with using_metadata(
+                {
+                    "task": task,
+                    "model": "llama-3.1-8b-instant",
+                    "temperature": 0.1,
+                }
+            ):
+                with tracer.start_as_current_span(
+                    "rewriteQueries tavily.ChatCompletion.create",
+                    openinference_span_kind="llm",
+                ) as span:
+                    span.set_input(messages)
+                    try:
+                        completion = openai.ChatCompletion.create(
+                            model="llama-3.1-8b-instant",
+                            temperature=0.1,
+                            messages=messages,
+                        )
+                    except openai.error.RateLimitError:
+                        print("Rate limit error")
+                        sleep(60)
+                        try:
+                            completion = openai.ChatCompletion.create(
+                                model="llama-3.1-8b-instant",
+                                temperature=0.1,
+                                messages=messages,
+                            )
+                        except openai.error.RateLimitError:
+                            print("Rate limit error")
+                            sleep(60)
+                            completion = openai.ChatCompletion.create(
+                                model="llama-3.1-8b-instant",
+                                temperature=0.1,
+                                messages=messages,
+                            )
+                    results = completion["choices"][0]["message"]["content"]
+                    span.set_attributes({"completion": completion})
+                    jsres = json.loads(results)  # validate JSON format
+                    span.set_output(jsres)
+        queries.append(jsres)
+    return queries
+
+
+@tracer.llm
+def extract_keywords(questions, task: str, openai_key: str):
     TASK_PROMPT = {
         "popqa": "Extract at most three keywords separated by comma from the following dialogues and questions as queries for the web search, including topic background within dialogues and main intent within questions. \n\nquestion: What is Henry Feilden's occupation?\nquery: Henry Feilden, occupation\n\nquestion: In what city was Billy Carlson born?\nquery: city, Billy Carlson, born\n\nquestion: What is the religion of John Gwynn?\nquery: religion of John Gwynn\n\nquestion: What sport does Kiribati men's national basketball team play?\nquery: sport, Kiribati men's national basketball team play\n\nquestion: {{question}}\nquery: ",
         "pubqa": "Extract at most three keywords separated by comma from the claim as queries to extract the key information. For example:\n\nclaim: WWE wrestler Ric Flair was declared brain dead on 16 May 2019. \nquery: WWE wrestler Ric Flair, brain dead on 16 May 2019\n\nclaim: Current expenditures could likely cover the estimated costs of Medicare for All.\nquery: Current expenditures could likely cover the estimated costs of Medicare for All.\n\nclaim: Measles outbreak kills more than 1,200 in Madagascar.\nquery: Measles outbreak kills more than 1,200 in Madagascar.\n\nclaim: {{question}}\nquery: ",
@@ -344,6 +424,7 @@ def extract_keywords(questions, task, openai_key):
                                 messages=messages,
                             )
                     results = completion["choices"][0]["message"]["content"]
+                    span.set_attributes({"completion": completion})
                     span.set_output(results)
             queries.append(results)
     return queries

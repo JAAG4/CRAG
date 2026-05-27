@@ -2,7 +2,7 @@ import argparse
 import os
 from tqdm import tqdm
 import json
-from utils import extract_keywords, select_relevants
+from utils import extract_keywords, select_relevants, rewrite_queries_tavily
 
 from phoenix.otel import using_metadata
 from tracing_phx import tracer
@@ -15,9 +15,52 @@ import os
 
 tavily_client = TavilyClient(os.environ["TAVILY_KEY"])
 
+UNTRUSTED_SOURCES_DOMAINS = [
+    "naturalnews.com",
+    "mercola.com",
+    "healthimpactnews.com",
+    "infowars.com",
+    "newswars.com",
+    "thegatewaypundit.com",
+    "zerohedge.com",
+    "breitbart.com",
+    "rt.com",
+    "sputniknews.com",
+    "dailymail.co.uk",
+    "nypost.com",
+]
+TRUSTED_SOURCES_DOMAINS = [
+    "wikipedia.org",
+    "nih.gov",
+    "cdc.gov",
+    "who.int",
+    "mayoclinic.org",
+    "thelancet.com",
+    "nature.com",
+    "science.org",
+    "medlineplus.gov",
+    "cochrane.org",
+    "reuters.com",
+    "apnews.com",
+    "afp.com",
+    "factcheck.org",
+    "politifact.com",
+    "snopes.com",
+    "fullfact.org",
+    "checkyourfact.com",
+    "nytimes.com",
+    "wsj.com",
+    "bbc.com",
+    "economist.com",
+    "theguardian.com",
+    "npr.org",
+    "pbs.org",
+]
+
 
 @tracer.chain
 def generate_knowledge_q(questions, task, openai_key, mode):
+    """Query Rewriting step"""
     # if task == "bio":
     #     queries = [q[7:-1] for q in questions]
     # else:
@@ -43,24 +86,33 @@ def tavily_search(queries, output_file, tavily=tavily_client):
                 "tavily_search", openinference_span_kind="tool"
             ) as span:
                 span.set_input({"query": query})
-                try:
-                    tav_results = tavily.search(
-                        query=query,
-                        search_depth="advanced",
-                        max_results=4,
-                    )
-                    print("\tQuery: `{}`".format(query))
-                except BadRequestError as e:
-                    print(f"\tError BadRequestError for query '{query}': {e}")
+                if isinstance(query, dict):
+                    query["topic"] = "general"
+                    query["exclude_domains"] = UNTRUSTED_SOURCES_DOMAINS
+                    query["include_domains"] = TRUSTED_SOURCES_DOMAINS
+                    try:
+                        tav_results = tavily.search(**query)
+                    except BadRequestError as e:
+                        print(f"\tError BadRequestError for query '{query}': {e}")
                 else:
-                    all_responses_content = [
-                        tv_res["content"].replace("\n", " ")
-                        for tv_res in tav_results["results"]
-                    ]
-                    results_string += "; ".join(all_responses_content) + "\n"
-                    span.set_output(
-                        {"raw": tav_results, "processed": all_responses_content}
-                    )
+                    try:
+                        tav_results = tavily.search(
+                            query=query,
+                            search_depth="advanced",
+                            max_results=4,
+                        )
+                        print(f"\tQuery: `{query}`")
+                    except BadRequestError as e:
+                        print(f"\tError BadRequestError for query '{query}': {e}")
+
+                all_responses_content = [
+                    tv_res["content"].replace("\n", " ")
+                    for tv_res in tav_results["results"]
+                ]
+                results_string += "; ".join(all_responses_content) + "\n"
+                span.set_output(
+                    {"raw": tav_results, "processed": all_responses_content}
+                )
                 # search_results.extend([{"queries":query,"results":rcontent}])
                 outf.write(results_string)
 
@@ -234,42 +286,22 @@ def main():
         "generate_knowledge_q", openinference_span_kind="chain"
     ) as span:
         span.set_input(questions)
-        search_queries = generate_knowledge_q(
-            questions, args.task, args.openai_key, args.mode
+        # search_queries = generate_knowledge_q(
+        #     questions, args.task, args.openai_key, args.mode
+        # )
+        tavily_rewritten_queries = rewrite_queries_tavily(
+            questions, args.task, args.openai_key
         )
         span.set_attributes(
             {
                 "task": args.task,
                 "mode": args.mode,
                 "queries": questions,
-                "output": search_queries,
+                # "output": tavily_rewritten_queries,
             }
         )
-        span.set_output(search_queries)
-    tavily_search(search_queries, f"{args.output_file}_tavily.txt")
-    return
-    with tracer.start_as_current_span(
-        name="search",
-        openinference_span_kind="retriever",
-        attributes={"task": args.task},
-    ) as span:
-        search_results = Search(search_queries, args.search_path, args.search_key)
-
-        results = visit_pages(
-            questions,
-            search_results,
-            args.output_file,
-            args.model_path,
-            args.device,
-            args.mode,
-        )
-        span.set_attributes(
-            {
-                "num_results": len(search_results),
-                "queries": search_queries,
-                "results": search_results,
-            }
-        )
+        span.set_output(tavily_rewritten_queries)
+    tavily_search(tavily_rewritten_queries, f"{args.output_file}_tavily.txt")
 
 
 if __name__ == "__main__":
