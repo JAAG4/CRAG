@@ -306,7 +306,7 @@ def rewrite_queries_tavily(questions, task, openai_key) -> list[dict]:
 - `topic: "general"`: For medical guidelines, scientific research, and historical data.
 
 **Output Format:**
-Return ONLY a valid JSON object:
+RESPOND ONLY WITH a valid JSON object:
 {
 "query": "The neutralized, entity-rich search string",
 "topic": "news" | "general" | "finance",
@@ -362,7 +362,10 @@ Return ONLY a valid JSON object:
                             )
                     results = completion["choices"][0]["message"]["content"]
                     span.set_attributes({"completion": completion})
-                    pprint(results)
+                    if "```" in results:
+                        results = results.split("```")[1]
+                        results = results.strip().strip("```")
+                    pprint(results.replace("json:", ""))
                     jsres = json.loads(results)  # validate JSON format
                     span.set_output(jsres)
         queries.append(jsres)
