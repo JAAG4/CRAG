@@ -75,11 +75,7 @@ def generate_knowledge_q(questions, task, openai_key, mode):
 @tracer.tool
 def tavily_search(queries, output_file, tavily=tavily_client):
     with open(output_file, "w", encoding="utf-8") as outf:
-        queries = [
-            " ".join(q.replace("claim:", "").replace("query:", "").split())
-            for q in queries
-            if q.strip() != ""
-        ]
+
         for query in tqdm(queries, desc="Searching for urls...", total=len(queries)):
             results_string = "#"
             with tracer.start_as_current_span(
@@ -94,7 +90,10 @@ def tavily_search(queries, output_file, tavily=tavily_client):
                         tav_results = tavily.search(**query)
                     except BadRequestError as e:
                         print(f"\tError BadRequestError for query '{query}': {e}")
-                else:
+                elif isinstance(query, str) and query.strip() != "":
+                    query = " ".join(
+                        query.replace("claim:", "").replace("query:", "").split()
+                    )
                     try:
                         tav_results = tavily.search(
                             query=query,

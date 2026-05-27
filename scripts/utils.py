@@ -365,7 +365,7 @@ RESPOND ONLY WITH a valid JSON object:
                     if "```" in results:
                         results = results.split("```")[1]
                         results = results.strip().strip("```")
-                    pprint(results.replace("json:", ""))
+                    # pprint(results.replace("json:", ""))
                     jsres = json.loads(results)  # validate JSON format
                     span.set_output(jsres)
         queries.append(jsres)
