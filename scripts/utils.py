@@ -9,6 +9,7 @@ import os
 from time import sleep
 import torch
 import torch.nn as nn
+from pprint import pprint
 
 # Phoenix OpenAI tracing
 
@@ -361,6 +362,7 @@ Return ONLY a valid JSON object:
                             )
                     results = completion["choices"][0]["message"]["content"]
                     span.set_attributes({"completion": completion})
+                    pprint(results)
                     jsres = json.loads(results)  # validate JSON format
                     span.set_output(jsres)
         queries.append(jsres)
