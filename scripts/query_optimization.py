@@ -1,15 +1,17 @@
 import os
 import json
 import openai
+from phoenix.otel import using_metadata
+from tracing_phx import tracer
 
 OPENAI_MODEL = "llama-3.1-8b-instant"
 
 openai_key = os.getenv("OPENAI_API_KEY")
 
 
+@tracer.chain
 def expand_query2doc(
     original_query: str,
-    client,
     retrieval_type: str = "dense",
 ) -> str:
     """
@@ -62,8 +64,8 @@ def expand_query2doc(
 
     return expanded_query
 
-
-def is_class_ii_query(query: str, client) -> bool:
+@tracer.chain
+def is_class_ii_query(query: str) -> bool:
     """
     Clasifica si un query es de Clase II (requiere descomposición por pedir
     múltiples fuentes, comparaciones o agregaciones).
@@ -89,8 +91,8 @@ Output EXACTLY and ONLY the word TRUE if it is Class II, or FALSE if it is not."
         print(f"Error en clasificación: {e}")
         return False
 
-
-def decompose_query(query: str, client) -> list:
+@tracer.chain
+def decompose_query(query: str) -> list:
     """
     Descompone un query complejo en una lista de sub-queries atómicos.
     Retorna una lista de strings.
@@ -134,9 +136,7 @@ def decompose_query(query: str, client) -> list:
         return [query]  # En caso de error, devolvemos el query original en una lista
 
 
-def optimize_pipeline(
-    original_query: str, client, retrieval_type: str = "dense"
-) -> list:
+def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> list:
     """
     Pipeline principal: Clasifica, descompone (si es necesario) y expande.
     Retorna siempre una lista de queries listos para el motor de búsqueda.
@@ -144,20 +144,20 @@ def optimize_pipeline(
     final_queries = []
 
     # 1. Clasificación
-    if is_class_ii_query(original_query, client):
+    if is_class_ii_query(original_query):
         print("-> Query clasificado como Clase II. Iniciando descomposición...")
         # 2. Descomposición
-        sub_queries = decompose_query(original_query, client)
+        sub_queries = decompose_query(original_query)
         print(f"->{len(sub_queries)} Sub-queries generados: {sub_queries}")
 
         # 3. Expansión para cada sub-query
         for sq in sub_queries:
-            expanded = expand_query2doc(sq, client, retrieval_type)
+            expanded = expand_query2doc(sq, retrieval_type)
             final_queries.append(expanded)
     else:
         print("-> Query simple. Pasando directo a expansión...")
         # 3. Expansión del query original
-        expanded = expand_query2doc(original_query, client, retrieval_type)
+        expanded = expand_query2doc(original_query, retrieval_type)
         final_queries.append(expanded)
 
     return final_queries

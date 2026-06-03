@@ -70,26 +70,43 @@ def knowledge_refinement(
     top_n = 3 if decompose_mode == "selection" else 6
 
     output_results = []
-    output_idxs = []
     progress_bar = tqdm(range(len(queries[:])))
     for psg, query in zip(psgs[:], queries[:]):
         results = ""
         strips = []
         for p in psg:
             strips += extract_strips_from_psg(psg=p, mode=decompose_mode)
-
-        results, idxs = select_relevants(
-            strips=strips,
-            query=query,
-            tokenizer=tokenizer,
-            model=model,
-            device=device,
-            top_n=top_n,
-        )
+        if is_class_ii_query(query):
+            sub_queries = decompose_query(query)
+            expanded_queries = [
+                expand_query2doc(sq, retrieval_type="dense") for sq in sub_queries
+            ]
+            d_results = ""
+            for exq in expanded_queries:
+                part_result = select_relevants(
+                    strips=strips,
+                    query=exq,
+                    tokenizer=tokenizer,
+                    model=model,
+                    device=device,
+                    top_n=top_n,
+                )
+                d_results += part_result[0] + " "
+            results = d_results.strip()
+        else:
+            ex_query = expand_query2doc(query, retrieval_type="dense")
+            results, _ = select_relevants(
+                strips=strips,
+                query=ex_query,
+                tokenizer=tokenizer,
+                model=model,
+                device=device,
+                top_n=top_n,
+            )
 
         results = results.replace("\n", " ")
         output_results.append(results)
-        output_idxs.append(idxs)
+        # output_idxs.append(idxs)
         progress_bar.update(1)
 
     with open(output_path, "w") as f:

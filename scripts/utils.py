@@ -436,7 +436,10 @@ def extract_keywords(questions, task: str, openai_key: str):
 
 
 @tracer.chain
-def select_relevants(strips, query, tokenizer, model, device, top_n=5):
+def select_relevants(
+    strips, query, tokenizer, model, device, top_n=5
+) -> tuple[str, str]:
+    """Given a list of text strips and a query, select the most relevant strips based on the model's scoring. Returns the top_n relevant strips and their corresponding indices."""
     device = device if torch.cuda.is_available() else "cpu"
     max_length = 512
     model = model.to(device)
