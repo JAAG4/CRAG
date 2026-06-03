@@ -7,7 +7,7 @@ from utils import extract_keywords, select_relevants, rewrite_queries_tavily
 from phoenix.otel import using_metadata
 from tracing_phx import tracer
 import requests
-
+from query_optimization import expand_query2doc, is_class_ii_query, decompose_query
 from transformers import T5ForSequenceClassification, T5Tokenizer
 from tavily import TavilyClient
 from tavily.errors import BadRequestError
@@ -73,13 +73,13 @@ def generate_knowledge_q(questions, task, openai_key, mode):
 
 
 @tracer.tool
-def tavily_search(queries, output_file, tavily=tavily_client):
+def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
     with open(output_file, "w", encoding="utf-8") as outf:
 
         for query in tqdm(queries, desc="Searching for urls...", total=len(queries)):
             results_string = "#"
             with tracer.start_as_current_span(
-                "tavily_search", openinference_span_kind="tool"
+                "tavily_search_query_optimize", openinference_span_kind="tool"
             ) as span:
                 span.set_input({"query": query})
                 if isinstance(query, dict):
@@ -94,24 +94,51 @@ def tavily_search(queries, output_file, tavily=tavily_client):
                     query = " ".join(
                         query.replace("claim:", "").replace("query:", "").split()
                     )
-                    try:
-                        tav_results = tavily.search(
-                            query=query,
-                            search_depth="advanced",
-                            max_results=4,
+                    results_string = ""
+                    if is_class_ii_query(query):
+                        dec_queries = decompose_query(query)
+                        print(f"-> Query '{query}'  Decomposed into: {dec_queries}")
+                        for dq in dec_queries:
+                            try:
+                                tav_results = tavily.search(
+                                    query=dq,
+                                    search_depth="advanced",
+                                    max_results=5,
+                                )
+                                print(f"\tSub-query: `{dq}`")
+                                all_responses_content = [
+                                    tv_res["content"].replace("\n", " ")
+                                    for tv_res in tav_results["results"]
+                                ]
+                                results_string += ". " + "; ".join(
+                                    all_responses_content
+                                )  # + "\n"
+                            except BadRequestError as e:
+                                print(
+                                    f"\tError BadRequestError for sub-query '{dq}': {e}"
+                                )
+                            span.set_attributes({"sub_queries": dec_queries})
+                        results_string = (
+                            results_string.strip().strip(".").strip() + "\n"
                         )
-                        print(f"\tQuery: `{query}`")
-                    except BadRequestError as e:
-                        print(f"\tError BadRequestError for query '{query}': {e}")
+                    else:
+                        try:
+                            tav_results = tavily.search(
+                                query=query,
+                                search_depth="advanced",
+                                max_results=5,
+                            )
 
-                all_responses_content = [
-                    tv_res["content"].replace("\n", " ")
-                    for tv_res in tav_results["results"]
-                ]
-                results_string += "; ".join(all_responses_content) + "\n"
-                span.set_output(
-                    {"raw": tav_results, "processed": all_responses_content}
-                )
+                            print(f"\tQuery: `{query}`")
+                        except BadRequestError as e:
+                            print(f"\tError BadRequestError for query '{query}': {e}")
+
+                        all_responses_content = [
+                            tv_res["content"].replace("\n", " ")
+                            for tv_res in tav_results["results"]
+                        ]
+                        results_string += "; ".join(all_responses_content) + "\n"
+                span.set_output({"raw": tav_results, "processed": results_string})
                 # search_results.extend([{"queries":query,"results":rcontent}])
                 outf.write(results_string)
 
@@ -288,9 +315,10 @@ def main():
         # search_queries = generate_knowledge_q(
         #     questions, args.task, args.openai_key, args.mode
         # )
-        tavily_rewritten_queries = rewrite_queries_tavily(
-            questions, args.task, args.openai_key
-        )
+        # tavily_rewritten_queries = rewrite_queries_tavily(
+        #     questions, args.task, args.openai_key
+        # )
+
         span.set_attributes(
             {
                 "task": args.task,
@@ -299,8 +327,11 @@ def main():
                 # "output": tavily_rewritten_queries,
             }
         )
+
         span.set_output(tavily_rewritten_queries)
-    tavily_search(tavily_rewritten_queries, f"{args.output_file}_tavily.txt")
+    tavily_search_query_optimize(
+        tavily_rewritten_queries, f"{args.output_file}_qo_tavily.txt"
+    )
 
 
 if __name__ == "__main__":
