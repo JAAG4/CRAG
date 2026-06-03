@@ -7,6 +7,7 @@ from transformers import T5ForSequenceClassification, T5Tokenizer
 from phoenix.otel import using_metadata
 from tracing_phx import tracer
 from utils import select_relevants
+from query_optimization import expand_query2doc, is_class_ii_query, decompose_query
 
 
 @tracer.chain

@@ -1,10 +1,16 @@
 import os
 import json
-from openai import OpenAI
+import openai
+
+OPENAI_MODEL = "llama-3.1-8b-instant"
+
+openai_key = os.getenv("OPENAI_API_KEY")
 
 
 def expand_query2doc(
-    original_query: str, retrieval_type: str = "sparse", api_key: str = None
+    original_query: str,
+    client,
+    retrieval_type: str = "dense",
 ) -> str:
     """
     Expande una consulta de búsqueda utilizando el paradigma Query2Doc.
@@ -18,13 +24,9 @@ def expand_query2doc(
         str: El query expandido listo para ser inyectado en tu sistema de recuperación.
     """
     # Inicializamos el cliente de OpenAI apuntando a la API de Groq
-    client = OpenAI(
-        api_key=api_key or os.environ.get("GROQ_API_KEY"),
-        base_url="https://api.groq.com/openai/v1",
-    )
 
     # Instrucción Zero-Shot (Q2D/ZS)
-    system_prompt = (
+    SYSTEM_PROMPT = (
         "You are an expert knowledge base. "
         "Write a highly descriptive paragraph that answers the query directly. "
         "Do not include conversational filler, just the factual response."
@@ -32,10 +34,10 @@ def expand_query2doc(
 
     try:
         # Generación del pseudo-documento utilizando Groq
-        response = client.chat.completions.create(
-            model="llama3-8b-8192",  # Puedes cambiarlo a llama3-70b-8192 o mixtral
+        response = openai.ChatCompletion.create(
+            model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": original_query},
             ],
             temperature=0.0,  # Temperatura baja para reducir alucinaciones
@@ -66,20 +68,16 @@ def is_class_ii_query(query: str, client) -> bool:
     Clasifica si un query es de Clase II (requiere descomposición por pedir
     múltiples fuentes, comparaciones o agregaciones).
     """
-    system_prompt = (
-        "You are a query classifier for a RAG system. "
-        "Determine if the user's query is a 'Class II' query. "
-        "A Class II query requires aggregating or comparing information from multiple independent sources or entities. "
-        "Examples of Class II: 'Compare the GDP of Japan and Germany', 'What are the differences between Python and Rust?'. "
-        "Examples of Non-Class II (Simple): 'What is the capital of France?', 'How does backpropagation work?'. "
-        "Output EXACTLY and ONLY the word TRUE if it is Class II, or FALSE if it is not."
-    )
+    SYSTEM_PROMPT = """You are a query classifier for a RAG system. Determine if the user's query requires aggregating or comparing information from multiple independent sources or entities.
+Examples: 'Compare the GDP of Japan and Germany', 'What are the differences between Python and Rust?'. 
+Examples of Simple: 'What is the capital of France?', 'How does backpropagation work?'. 
+Output EXACTLY and ONLY the word TRUE if it is Class II, or FALSE if it is not."""
 
     try:
-        response = client.chat.completions.create(
-            model="llama3-8b-8192",
+        response = openai.ChatCompletion.create(
+            model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
             ],
             temperature=0.0,
@@ -97,7 +95,7 @@ def decompose_query(query: str, client) -> list:
     Descompone un query complejo en una lista de sub-queries atómicos.
     Retorna una lista de strings.
     """
-    system_prompt = (
+    SYSTEM_PROMPT = (
         "You are an expert query planner. Your task is to break down a complex query "
         "into simpler, atomic sub-queries that can be searched independently. "
         "Output ONLY a valid JSON array of strings containing the sub-queries, with no markdown formatting or extra text. "
@@ -105,10 +103,10 @@ def decompose_query(query: str, client) -> list:
     )
 
     try:
-        response = client.chat.completions.create(
-            model="llama3-8b-8192",
+        response = openai.ChatCompletion.create(
+            model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
             ],
             temperature=0.0,
@@ -136,7 +134,9 @@ def decompose_query(query: str, client) -> list:
         return [query]  # En caso de error, devolvemos el query original en una lista
 
 
-def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> list:
+def optimize_pipeline(
+    original_query: str, client, retrieval_type: str = "dense"
+) -> list:
     """
     Pipeline principal: Clasifica, descompone (si es necesario) y expande.
     Retorna siempre una lista de queries listos para el motor de búsqueda.
@@ -144,20 +144,20 @@ def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> lis
     final_queries = []
 
     # 1. Clasificación
-    if is_class_ii_query(original_query):
-        print(f"-> Query clasificado como Clase II. Iniciando descomposición...")
+    if is_class_ii_query(original_query, client):
+        print("-> Query clasificado como Clase II. Iniciando descomposición...")
         # 2. Descomposición
-        sub_queries = decompose_query(original_query)
-        print(f"-> Sub-queries generados: {sub_queries}")
+        sub_queries = decompose_query(original_query, client)
+        print(f"->{len(sub_queries)} Sub-queries generados: {sub_queries}")
 
         # 3. Expansión para cada sub-query
         for sq in sub_queries:
-            expanded = expand_query2doc(sq, retrieval_type)
+            expanded = expand_query2doc(sq, client, retrieval_type)
             final_queries.append(expanded)
     else:
-        print(f"-> Query simple detectado. Pasando directo a expansión...")
+        print("-> Query simple. Pasando directo a expansión...")
         # 3. Expansión del query original
-        expanded = expand_query2doc(original_query, retrieval_type)
+        expanded = expand_query2doc(original_query, client, retrieval_type)
         final_queries.append(expanded)
 
     return final_queries
@@ -167,12 +167,12 @@ def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> lis
 if __name__ == "__main__":
     # Asegúrate de configurar: os.environ["GROQ_API_KEY"] = "tu_clave_aqui"
 
-    query = "What is the capital of France?"
+    testquery = "What is the capital of France?"
 
     # Para motores basados en vectores / embeddings (Dense)
-    dense_query = expand_query2doc(query, retrieval_type="dense")
-    print(f"Dense Expansion:\n{dense_query}\n")
+    # dense_query = expand_query2doc(query, client, retrieval_type="dense")
+    # print(f"Dense Expansion:\n{dense_query}\n")
 
-    # Para motores léxicos como Elasticsearch / BM25 (Sparse)
-    sparse_query = expand_query2doc(query, retrieval_type="sparse")
-    print(f"Sparse Expansion:\n{sparse_query}")
+    # Para motores léxicos como  BM25 (Sparse)
+    # sparse_query = expand_query2doc(query, client, retrieval_type="sparse")
+    # print(f"Sparse Expansion:\n{sparse_query}")
