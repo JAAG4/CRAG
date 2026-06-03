@@ -328,10 +328,8 @@ def main():
             }
         )
 
-        span.set_output(tavily_rewritten_queries)
-    tavily_search_query_optimize(
-        tavily_rewritten_queries, f"{args.output_file}_qo_tavily.txt"
-    )
+        # span.set_output(tavily_rewritten_queries)
+    tavily_search_query_optimize(questions, f"{args.output_file}_qo_tavily.txt")
 
 
 if __name__ == "__main__":
