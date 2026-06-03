@@ -34,35 +34,52 @@ def expand_query2doc(
         "Do not include conversational filler, just the factual response."
     )
 
-    try:
-        # Generación del pseudo-documento utilizando Groq
-        response = openai.ChatCompletion.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": original_query},
-            ],
-            temperature=0.0,  # Temperatura baja para reducir alucinaciones
-            max_tokens=150,
+    with tracer.start_as_current_span(
+        "expand_query2doc", openinference_span_kind="chain"
+    ) as span:
+        span.set_input(
+            {"original_query": original_query, "retrieval_type": retrieval_type}
         )
 
-        pseudo_document = response.choices[0].message.content.strip()
+        try:
+            # Generación del pseudo-documento utilizando Groq
+            response = openai.ChatCompletion.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": original_query},
+                ],
+                temperature=0.0,  # Temperatura baja para reducir alucinaciones
+                max_tokens=150,
+            )
 
-    except Exception as e:
-        print(f"Error generando el pseudo-documento: {e}")
-        # Como fallback, retornamos el query original
-        return original_query
+            pseudo_document = response.choices[0].message.content.strip()
 
-    # Reformulación matemática basada en el tipo de recuperación
-    if retrieval_type.lower() == "sparse":
-        # Repetición del query original 5 veces para ponderación de BM25
-        repeated_query = " ".join([original_query] * 5)
-        expanded_query = f"{repeated_query} {pseudo_document}"
-    else:
-        # Concatenación simple para Bi-Encoders densos
-        expanded_query = f"{original_query} [SEP] {pseudo_document}"
+        except Exception as e:
+            print(f"Error generando el pseudo-documento: {e}")
+            span.set_attributes({"error": str(e)})
+            span.set_output(
+                {"result": original_query, "fallback": True, "reason": "openai_error"}
+            )
+            return original_query
 
-    return expanded_query
+        # Reformulación matemática basada en el tipo de recuperación
+        if retrieval_type.lower() == "sparse":
+            # Repetición del query original 5 veces para ponderación de BM25
+            repeated_query = " ".join([original_query] * 5)
+            expanded_query = f"{repeated_query} {pseudo_document}"
+        else:
+            # Concatenación simple para Bi-Encoders densos
+            expanded_query = f"{original_query} [SEP] {pseudo_document}"
+
+        span.set_output(
+            {
+                "pseudo_document": pseudo_document,
+                "expanded_query": expanded_query,
+            }
+        )
+        return expanded_query
+
 
 @tracer.chain
 def is_class_ii_query(query: str) -> bool:
@@ -75,21 +92,31 @@ Examples: 'Compare the GDP of Japan and Germany', 'What are the differences betw
 Examples of Simple: 'What is the capital of France?', 'How does backpropagation work?'. 
 Output EXACTLY and ONLY the word TRUE if it is Class II, or FALSE if it is not."""
 
-    try:
-        response = openai.ChatCompletion.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": query},
-            ],
-            temperature=0.0,
-            max_tokens=10,
-        )
-        result = response.choices[0].message.content.strip().upper()
-        return "TRUE" in result
-    except Exception as e:
-        print(f"Error en clasificación: {e}")
-        return False
+    with tracer.start_as_current_span(
+        "is_class_ii_query", openinference_span_kind="chain"
+    ) as span:
+        span.set_input({"query": query})
+
+        try:
+            response = openai.ChatCompletion.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": query},
+                ],
+                temperature=0.0,
+                max_tokens=10,
+            )
+            result = response.choices[0].message.content.strip().upper()
+            is_class_ii = "TRUE" in result
+            span.set_output({"result": is_class_ii, "raw_model_response": result})
+            return is_class_ii
+        except Exception as e:
+            print(f"Error en clasificación: {e}")
+            span.set_attributes({"error": str(e)})
+            span.set_output({"result": False, "fallback": True})
+            return False
+
 
 @tracer.chain
 def decompose_query(query: str) -> list:
@@ -104,36 +131,49 @@ def decompose_query(query: str) -> list:
         'Example: ["What is the GDP of Japan over the last decade?", "What is the GDP of Germany over the last decade?"]'
     )
 
-    try:
-        response = openai.ChatCompletion.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": query},
-            ],
-            temperature=0.0,
-            # Forzamos salida JSON si el modelo lo soporta, o confiamos en el prompt estricto
-            response_format={"type": "json_object"},
-        )
+    with tracer.start_as_current_span(
+        "decompose_query", openinference_span_kind="chain"
+    ) as span:
+        span.set_input({"query": query})
 
-        # Parsear el string JSON retornado a una lista de Python
-        raw_json = response.choices[0].message.content.strip()
-        # Si el modelo devuelve un diccionario con una llave, lo extraemos.
-        # Adaptado para asegurar robustez en el parseo:
-        parsed_data = json.loads(raw_json)
+        try:
+            response = openai.ChatCompletion.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": query},
+                ],
+                temperature=0.0,
+                # Forzamos salida JSON si el modelo lo soporta, o confiamos en el prompt estricto
+                response_format={"type": "json_object"},
+            )
 
-        if isinstance(parsed_data, list):
-            return parsed_data
-        elif isinstance(parsed_data, dict):
-            # Extrae la primera lista que encuentre en los valores del dict
-            for val in parsed_data.values():
-                if isinstance(val, list):
-                    return val
+            # Parsear el string JSON retornado a una lista de Python
+            raw_json = response.choices[0].message.content.strip()
+            # Si el modelo devuelve un diccionario con una llave, lo extraemos.
+            # Adaptado para asegurar robustez en el parseo:
+            parsed_data = json.loads(raw_json)
 
-        return [query]  # Fallback
-    except Exception as e:
-        print(f"Error en descomposición: {e}")
-        return [query]  # En caso de error, devolvemos el query original en una lista
+            if isinstance(parsed_data, list):
+                span.set_output({"result": parsed_data})
+                return parsed_data
+            elif isinstance(parsed_data, dict):
+                for val in parsed_data.values():
+                    if isinstance(val, list):
+                        span.set_output({"result": val})
+                        return val
+
+            span.set_output(
+                {"result": [query], "fallback": True, "reason": "parsed_not_list"}
+            )
+            return [query]  # Fallback
+        except Exception as e:
+            print(f"Error en descomposición: {e}")
+            span.set_attributes({"error": str(e)})
+            span.set_output({"result": [query], "fallback": True})
+            return [
+                query
+            ]  # En caso de error, devolvemos el query original en una lista
 
 
 def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> list:
@@ -143,22 +183,55 @@ def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> lis
     """
     final_queries = []
 
-    # 1. Clasificación
-    if is_class_ii_query(original_query):
-        print("-> Query clasificado como Clase II. Iniciando descomposición...")
-        # 2. Descomposición
-        sub_queries = decompose_query(original_query)
-        print(f"->{len(sub_queries)} Sub-queries generados: {sub_queries}")
+    with tracer.start_as_current_span(
+        "optimize_pipeline", openinference_span_kind="chain"
+    ) as span:
+        span.set_input(
+            {"original_query": original_query, "retrieval_type": retrieval_type}
+        )
 
-        # 3. Expansión para cada sub-query
-        for sq in sub_queries:
-            expanded = expand_query2doc(sq, retrieval_type)
-            final_queries.append(expanded)
-    else:
-        print("-> Query simple. Pasando directo a expansión...")
-        # 3. Expansión del query original
-        expanded = expand_query2doc(original_query, retrieval_type)
-        final_queries.append(expanded)
+        if is_class_ii_query(original_query):
+            print("-> Query clasificado como Clase II. Iniciando descomposición...")
+            span.set_attributes({"classification": "Class II"})
+
+            with tracer.start_as_current_span(
+                "optimize_pipeline.decompose", openinference_span_kind="chain"
+            ) as decomp_span:
+                decomp_span.set_input({"query": original_query})
+                sub_queries = decompose_query(original_query)
+                decomp_span.set_output({"sub_queries": sub_queries})
+
+            print(f"->{len(sub_queries)} Sub-queries generados: {sub_queries}")
+
+            with tracer.start_as_current_span(
+                "optimize_pipeline.expand_subqueries", openinference_span_kind="chain"
+            ) as expansion_span:
+                expansion_span.set_input(
+                    {
+                        "sub_query_count": len(sub_queries),
+                        "retrieval_type": retrieval_type,
+                    }
+                )
+                for sq in sub_queries:
+                    expanded = expand_query2doc(sq, retrieval_type)
+                    final_queries.append(expanded)
+                expansion_span.set_output(
+                    {"expanded_queries_count": len(final_queries)}
+                )
+        else:
+            print("-> Query simple. Pasando directo a expansión...")
+            span.set_attributes({"classification": "simple"})
+            with tracer.start_as_current_span(
+                "optimize_pipeline.expand_single", openinference_span_kind="chain"
+            ) as expansion_span:
+                expansion_span.set_input(
+                    {"query": original_query, "retrieval_type": retrieval_type}
+                )
+                expanded = expand_query2doc(original_query, retrieval_type)
+                final_queries.append(expanded)
+                expansion_span.set_output({"expanded_query": expanded})
+
+        span.set_output({"optimized_queries": final_queries})
 
     return final_queries
 
