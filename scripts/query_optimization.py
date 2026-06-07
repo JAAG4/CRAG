@@ -1,15 +1,15 @@
 import os
 import json
 import openai
-from phoenix.otel import using_metadata
 from tracing_phx import tracer
-
+from tenacity import retry, wait_fixed
 OPENAI_MODEL = "llama-3.1-8b-instant"
 
 openai_key = os.getenv("OPENAI_API_KEY")
 
 
 @tracer.chain
+@retry(wait=wait_fixed(2))
 def expand_query2doc(
     original_query: str,
     retrieval_type: str = "dense",
@@ -30,7 +30,8 @@ def expand_query2doc(
     # Instrucción Zero-Shot (Q2D/ZS)
     SYSTEM_PROMPT = (
         "You are an expert knowledge base. "
-        "Write a highly descriptive paragraph that answers the query directly. "
+        "If a query is written as a claim or statement, rephrase it as a web-searchable query."
+        "then Write a highly descriptive paragraph that answers the query directly. "
         "Do not include conversational filler, just the factual response."
     )
 
@@ -82,6 +83,7 @@ def expand_query2doc(
 
 
 @tracer.chain
+@retry(wait=wait_fixed(2))
 def is_class_ii_query(query: str) -> bool:
     """
     Clasifica si un query es de Clase II (requiere descomposición por pedir
@@ -119,6 +121,7 @@ Output EXACTLY and ONLY the word TRUE if it is Class II, or FALSE if it is not."
 
 
 @tracer.chain
+@retry(wait=wait_fixed(2))
 def decompose_query(query: str) -> list:
     """
     Descompone un query complejo en una lista de sub-queries atómicos.
@@ -127,6 +130,7 @@ def decompose_query(query: str) -> list:
     SYSTEM_PROMPT = (
         "You are an expert query planner. Your task is to break down a complex query "
         "into simpler, atomic sub-queries that can be searched independently. "
+        "If a query is written as a claim or statement, rephrase it as a web-searchable query."
         "Output ONLY a valid JSON array of strings containing the sub-queries, with no markdown formatting or extra text. "
         'Example: ["What is the GDP of Japan over the last decade?", "What is the GDP of Germany over the last decade?"]'
     )
@@ -176,6 +180,7 @@ def decompose_query(query: str) -> list:
             ]  # En caso de error, devolvemos el query original en una lista
 
 
+@retry(wait=wait_fixed(2))
 def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> list:
     """
     Pipeline principal: Clasifica, descompone (si es necesario) y expande.
