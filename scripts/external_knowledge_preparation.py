@@ -98,8 +98,13 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
                     if is_class_ii_query(query):
                         dec_queries = decompose_query(query)
                         print(f"-> Query '{query}'  Decomposed into: {dec_queries}")
-                        for dq in dec_queries:
+                        expanded_queries = [
+                            expand_query2doc(sq, retrieval_type="dense")
+                            for sq in dec_queries
+                        ]
+                        for dq in expanded_queries:
                             try:
+
                                 tav_results = tavily.search(
                                     query=dq,
                                     search_depth="advanced",
@@ -123,6 +128,7 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
                         )
                     else:
                         try:
+                            query = expand_query2doc(query, retrieval_type="dense")
                             tav_results = tavily.search(
                                 query=query,
                                 search_depth="advanced",
