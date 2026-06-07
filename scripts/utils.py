@@ -20,6 +20,7 @@ from tracing_phx import tracer
 
 OpenAIInstrumentor().instrument(tracer_provider=tracer)
 
+AIMODEL_NAME = "llama-3.1-8b-instant"
 PROMPT_DICT = {
     "prompt_input": (
         "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n"
@@ -328,7 +329,7 @@ RESPOND ONLY WITH a valid JSON object:
             with using_metadata(
                 {
                     "task": task,
-                    "model": "llama-3.1-8b-instant",
+                    "model": AIMODEL_NAME,
                     "temperature": 0.1,
                 }
             ):
@@ -339,7 +340,7 @@ RESPOND ONLY WITH a valid JSON object:
                     span.set_input(messages)
                     try:
                         completion = openai.ChatCompletion.create(
-                            model="llama-3.1-8b-instant",
+                            model=AIMODEL_NAME,
                             temperature=0.1,
                             messages=messages,
                         )
@@ -348,7 +349,7 @@ RESPOND ONLY WITH a valid JSON object:
                         sleep(60)
                         try:
                             completion = openai.ChatCompletion.create(
-                                model="llama-3.1-8b-instant",
+                                model=AIMODEL_NAME,
                                 temperature=0.1,
                                 messages=messages,
                             )
@@ -356,7 +357,7 @@ RESPOND ONLY WITH a valid JSON object:
                             print("Rate limit error")
                             sleep(60)
                             completion = openai.ChatCompletion.create(
-                                model="llama-3.1-8b-instant",
+                                model=AIMODEL_NAME,
                                 temperature=0.1,
                                 messages=messages,
                             )
@@ -396,7 +397,7 @@ def extract_keywords(questions, task: str, openai_key: str):
             with using_metadata(
                 {
                     "task": task,
-                    "model": "llama-3.1-8b-instant",
+                    "model": AIMODEL_NAME,
                     "temperature": 0.1,
                 }
             ):
@@ -407,7 +408,7 @@ def extract_keywords(questions, task: str, openai_key: str):
                     span.set_input(messages)
                     try:
                         completion = openai.ChatCompletion.create(
-                            model="llama-3.1-8b-instant",
+                            model=AIMODEL_NAME,
                             temperature=0.1,
                             messages=messages,
                         )
@@ -416,7 +417,7 @@ def extract_keywords(questions, task: str, openai_key: str):
                         sleep(60)
                         try:
                             completion = openai.ChatCompletion.create(
-                                model="llama-3.1-8b-instant",
+                                model=AIMODEL_NAME,
                                 temperature=0.1,
                                 messages=messages,
                             )
@@ -424,7 +425,7 @@ def extract_keywords(questions, task: str, openai_key: str):
                             print("Rate limit error")
                             sleep(60)
                             completion = openai.ChatCompletion.create(
-                                model="llama-3.1-8b-instant",
+                                model=AIMODEL_NAME,
                                 temperature=0.1,
                                 messages=messages,
                             )

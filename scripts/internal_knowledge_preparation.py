@@ -11,9 +11,10 @@ from query_optimization import expand_query2doc, is_class_ii_query, decompose_qu
 
 
 @tracer.chain
-def extract_strips_from_psg(psg, mode="excerption"):
+def extract_strips_from_psg(psg: str, mode="excerption") -> list[str]:
+    assert mode in ["excerption", "selection", "fixed_num"]
     if mode == "fixed_num":
-        final_strips = []
+        final_strips: list[str] = []
         window_length = 50
         words = psg.split(" ")
         buf = []
@@ -73,7 +74,7 @@ def knowledge_refinement(
     progress_bar = tqdm(range(len(queries[:])))
     for psg, query in zip(psgs[:], queries[:]):
         results = ""
-        strips = []
+        strips: list[str] = []
         for p in psg:
             strips += extract_strips_from_psg(psg=p, mode=decompose_mode)
         if is_class_ii_query(query):
