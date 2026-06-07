@@ -62,7 +62,8 @@ def expand_query2doc(
             span.set_output(
                 {"result": original_query, "fallback": True, "reason": "openai_error"}
             )
-            return original_query
+            raise e
+            #return original_query
 
         # Reformulación matemática basada en el tipo de recuperación
         if retrieval_type.lower() == "sparse":
