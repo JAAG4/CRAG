@@ -149,7 +149,7 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
                             outf.write(results_string)
                         except BadRequestError as e:
                             print(f"\tError BadRequestError for query '{query}': {e}")
-                        else:
+
 
 
 @tracer.tool
