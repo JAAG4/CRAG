@@ -176,6 +176,7 @@ def decompose_query(query: str) -> list:
             print(f"Error en descomposición: {e}")
             span.set_attributes({"error": str(e)})
             span.set_output({"result": [query], "fallback": True})
+            raise e
             return [
                 query
             ]  # En caso de error, devolvemos el query original en una lista
