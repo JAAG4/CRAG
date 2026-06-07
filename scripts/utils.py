@@ -18,6 +18,8 @@ from phoenix.otel import using_prompt_template, using_metadata
 
 from tracing_phx import tracer
 
+TEST_SLICING = slice(0, 200)
+
 OpenAIInstrumentor().instrument(tracer_provider=tracer)
 
 AIMODEL_NAME = "llama-3.1-8b-instant"

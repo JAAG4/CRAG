@@ -1,5 +1,5 @@
 import argparse
-from utils import load_file
+from utils import load_file,TEST_SLICING
 import json
 
 
@@ -52,7 +52,7 @@ def main():
                     questions.append(question)
                     psgs = [
                         c["title"] + " // " + c["text"].strip().replace("\n", " ")
-                        for c in item["ctxs"][:10]
+                        for c in item["ctxs"][TEST_SLICING]
                     ]
                     passages.append(" [sep] ".join(psgs))
                     for p in psgs:
@@ -87,7 +87,7 @@ def main():
                     questions.append(question)
                     psgs = [
                         c["title"] + " // " + c["text"].strip().replace("\n", " ")
-                        for c in item["ctxs"][:10]
+                        for c in item["ctxs"][TEST_SLICING]
                     ]
                     passages.append(" [sep] ".join(psgs))
                     choices = [
@@ -97,7 +97,7 @@ def main():
                         )
                     ]
                     choice_contents.append("; ".join(choices))
-                    for c in item["ctxs"][:10]:
+                    for c in item["ctxs"][TEST_SLICING]:
                         contents.append(
                             item["question"]
                             + " [SEP] "
@@ -136,7 +136,7 @@ def main():
                     questions.append(question)
                     psgs = [
                         c["title"] + " // " + c["text"].strip().replace("\n", " ")
-                        for c in item["ctxs"][:10]
+                        for c in item["ctxs"][TEST_SLICING]
                     ]
                     passages.append(" [sep] ".join(psgs))
                     for p in psgs:
@@ -168,11 +168,11 @@ def main():
                     questions.append(item["question"])
                     psgs = [
                         c["text"].strip().replace("\n", " ").replace("\t", " ")
-                        for c in item["ctxs"][:10]
+                        for c in item["ctxs"][TEST_SLICING]
                     ]
                     label = [
                         "1" if c["title"] == item["s_wiki_title"] else "0"
-                        for c in item["ctxs"][:10]
+                        for c in item["ctxs"][TEST_SLICING]
                     ]
                     passages.append(" [sep] ".join(psgs))
                     contents += [

@@ -2,7 +2,7 @@ import argparse
 import os
 from tqdm import tqdm
 import json
-from utils import extract_keywords, select_relevants, rewrite_queries_tavily
+from utils import extract_keywords, select_relevants, rewrite_queries_tavily, TEST_SLICING
 
 from phoenix.otel import using_metadata
 from tracing_phx import tracer
@@ -168,7 +168,7 @@ def Search(queries, search_path, search_key):
                 print("url: {} failed * {}".format(url, reconnect))
         result = json.loads(response.text)
         if "organic" in result:
-            results = result["organic"][:10]
+            results = result["organic"][TEST_SLICING]
         else:
             results = query
         responses.append(results)
@@ -313,7 +313,7 @@ def main():
 
     os.environ["OPENAI_API_KEY"] = args.openai_key
     with open(args.input_queries, "r") as query_f:
-        questions = [q.strip() for q in query_f.readlines()][:10]
+        questions = [q.strip() for q in query_f.readlines()][TEST_SLICING]
     with tracer.start_as_current_span(
         "generate_knowledge_q", openinference_span_kind="chain"
     ) as span:
