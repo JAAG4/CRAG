@@ -189,11 +189,11 @@ def get_evaluator_data(file):
 def inference(tokenizer, model, file, device=torch.device("cpu"), n_docs=10):
     model.eval()
     content, label = get_evaluator_data(file)
-
+    content = content[:]
     preds = []
     scores = []
 
-    for n, c in tqdm(enumerate(content[:])):
+    for n, c in tqdm(enumerate(content),total=len(content)):
         if c.strip().endswith("[SEP]"):
             preds.append(-1)
             scores.append(-1.0)
