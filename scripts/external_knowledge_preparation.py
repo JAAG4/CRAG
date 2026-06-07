@@ -126,6 +126,9 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
                         results_string = (
                             results_string.strip().strip(".").strip() + "\n"
                         )
+                        span.set_output({"raw": tav_results, "processed": results_string})
+                        # search_results.extend([{"queries":query,"results":rcontent}])
+                        outf.write(results_string)
                     else:
                         try:
                             query = expand_query2doc(query, retrieval_type="dense")
@@ -136,17 +139,17 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
                             )
 
                             print(f"\tQuery: `{query}`")
+                            all_responses_content = [
+                                tv_res["content"].replace("\n", " ")
+                                for tv_res in tav_results["results"]
+                            ]
+                            results_string += "; ".join(all_responses_content) + "\n"
+                            span.set_output({"raw": tav_results, "processed": results_string})
+                            # search_results.extend([{"queries":query,"results":rcontent}])
+                            outf.write(results_string)
                         except BadRequestError as e:
                             print(f"\tError BadRequestError for query '{query}': {e}")
-
-                        all_responses_content = [
-                            tv_res["content"].replace("\n", " ")
-                            for tv_res in tav_results["results"]
-                        ]
-                        results_string += "; ".join(all_responses_content) + "\n"
-                span.set_output({"raw": tav_results, "processed": results_string})
-                # search_results.extend([{"queries":query,"results":rcontent}])
-                outf.write(results_string)
+                        else:
 
 
 @tracer.tool
