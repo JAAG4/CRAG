@@ -83,13 +83,7 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
             ) as span:
                 span.set_input({"query": query})
                 if isinstance(query, dict):
-                    query["topic"] = "general"
-                    query["exclude_domains"] = UNTRUSTED_SOURCES_DOMAINS
-                    query["include_domains"] = TRUSTED_SOURCES_DOMAINS
-                    try:
-                        tav_results = tavily.search(**query)
-                    except BadRequestError as e:
-                        print(f"\tError BadRequestError for query '{query}': {e}")
+                    raise NotImplementedError("Dict query format not valid")
                 elif isinstance(query, str) and query.strip() != "":
                     query = " ".join(
                         query.replace("claim:", "").replace("query:", "").split()
@@ -106,7 +100,7 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
                             try:
 
                                 tav_results = tavily.search(
-                                    query=dq,
+                                    query=dq[:399], # Tavily has a max query length of 400 characters
                                     search_depth="advanced",
                                     max_results=5,
                                 )
@@ -133,7 +127,7 @@ def tavily_search_query_optimize(queries, output_file, tavily=tavily_client):
                         try:
                             query = expand_query2doc(query, retrieval_type="dense")
                             tav_results = tavily.search(
-                                query=query,
+                                query=query[:399],# Tavily has a max query length of 400 characters
                                 search_depth="advanced",
                                 max_results=5,
                             )
