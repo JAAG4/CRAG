@@ -2,14 +2,14 @@ import os
 import json
 import openai
 from tracing_phx import tracer
-from tenacity import retry, wait_fixed
+from tenacity import retry, wait_fixed,stop_after_attempt
 OPENAI_MODEL = "llama-3.1-8b-instant"
 
 openai_key = os.getenv("OPENAI_API_KEY")
 
 
 @tracer.chain
-@retry(wait=wait_fixed(2))
+@retry(wait=wait_fixed(2), stop=stop_after_attempt(5))
 def expand_query2doc(
     original_query: str,
     retrieval_type: str = "dense",
@@ -84,7 +84,7 @@ def expand_query2doc(
 
 
 @tracer.chain
-@retry(wait=wait_fixed(2))
+@retry(wait=wait_fixed(2), stop=stop_after_attempt(5))
 def is_class_ii_query(query: str) -> bool:
     """
     Clasifica si un query es de Clase II (requiere descomposición por pedir
@@ -122,7 +122,7 @@ Output EXACTLY and ONLY the word TRUE if it is Class II, or FALSE if it is not."
 
 
 @tracer.chain
-@retry(wait=wait_fixed(2))
+@retry(wait=wait_fixed(2), stop=stop_after_attempt(5))
 def decompose_query(query: str) -> list:
     """
     Descompone un query complejo en una lista de sub-queries atómicos.
@@ -182,7 +182,7 @@ def decompose_query(query: str) -> list:
             ]  # En caso de error, devolvemos el query original en una lista
 
 
-@retry(wait=wait_fixed(2))
+@retry(wait=wait_fixed(2), stop=stop_after_attempt(5))
 def optimize_pipeline(original_query: str, retrieval_type: str = "dense") -> list:
     """
     Pipeline principal: Clasifica, descompone (si es necesario) y expande.
