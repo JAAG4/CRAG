@@ -18,7 +18,8 @@ from phoenix.otel import using_prompt_template, using_metadata
 
 from tracing_phx import tracer
 
-TEST_SLICING = slice(0, 200)
+tslice = os.getenv("TEST_SLICING", "200")
+TEST_SLICING = slice(0, int(tslice))
 
 OpenAIInstrumentor().instrument(tracer_provider=tracer)
 
